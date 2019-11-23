@@ -1,4 +1,4 @@
-package entrants.pacman.username;
+package entrants.pacman.matt_barthet;
 
 import pacman.controllers.PacmanController;
 import pacman.game.Constants.MOVE;

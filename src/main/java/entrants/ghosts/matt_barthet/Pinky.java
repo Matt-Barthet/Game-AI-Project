@@ -1,17 +1,16 @@
-package entrants.ghosts.username;
+package entrants.ghosts.matt_barthet;
 
 import pacman.controllers.IndividualGhostController;
-import pacman.controllers.MASController;
 import pacman.game.Constants;
 import pacman.game.Game;
 
 /**
  * Created by Piers on 11/11/2015.
  */
-public class Sue extends IndividualGhostController {
+public class Pinky extends GAGhostController {
 
-    public Sue() {
-        super(Constants.GHOST.SUE);
+    public Pinky() {
+        super(Constants.GHOST.PINKY);
     }
 
     @Override

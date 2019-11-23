@@ -1,18 +1,16 @@
-package entrants.ghosts.username;
+package entrants.ghosts.matt_barthet;
 
 import pacman.controllers.IndividualGhostController;
-import pacman.controllers.MASController;
 import pacman.game.Constants;
 import pacman.game.Game;
 
 /**
  * Created by Piers on 11/11/2015.
  */
-public class Blinky extends IndividualGhostController {
+public class Inky extends GAGhostController {
 
-
-    public Blinky() {
-        super(Constants.GHOST.BLINKY);
+    public Inky() {
+        super(Constants.GHOST.INKY);
     }
 
     @Override
