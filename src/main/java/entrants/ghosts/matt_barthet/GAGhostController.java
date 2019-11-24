@@ -17,6 +17,7 @@ public class GAGhostController extends IndividualGhostController {
     private final static int COMPUTATIONAL_BUDGET = 40;
 
     private ArrayList<Gene> mPopulation;
+    private Game virtual_game;
 
     /**
      * Creates the starting population of Gene classes, whose chromosome contents are random
@@ -24,31 +25,42 @@ public class GAGhostController extends IndividualGhostController {
      */
     public GAGhostController(Constants.GHOST ghost) {
         super(ghost);
-        int size = 10;
         mPopulation = new ArrayList<Gene>();
-        for(int i = 0; i < size; i++){
-            Gene entry = new Gene();
-            entry.randomizeChromosome();
-            mPopulation.add(entry);
-        }
     }
 
     //TODO
     public Constants.MOVE getMove(Game game, long timeDue) {
+        this.virtual_game = game.copy();
+
+        if(virtual_game.doesGhostRequireAction(ghost)){
+            for(int i = 0; i < POPULATION_SIZE; i++){
+                Gene entry = new Gene();
+                entry.randomizeChromosome();
+                mPopulation.add(entry);
+            }
+
+            int generationCount = geneticAlgorithm();
+        }
+
         return null;
     }
 
-    // Genetic Algorithm maxA testing method
-    public void geneticAlgorithm( String[] args ){
+    /**
+     * Function to perform the genetic algorithm as long as it is within computational
+     * budget. Once complete the individual with the best fitness in the resulting
+     * population is chosen as Pac-man's best action.
+     * @return the number of generations evolved during the budgeted period.
+     */
+    public int geneticAlgorithm(){
         int generationCount = 0;
         long start = new Date().getTime();
         while(new Date().getTime() < start + COMPUTATIONAL_BUDGET){
             evaluateGeneration();
-            printEvaluation(generationCount);
+            //System.out.println(printEvaluation(generationCount));
             produceNextGeneration();
             generationCount++;
         }
-
+        return generationCount;
     }
 
     /**
@@ -110,7 +122,6 @@ public class GAGhostController extends IndividualGhostController {
                 bestIndividual = getGene(i).getPhenotype();
             }
         }
-
         if(mPopulation.size()>0){ avgFitness = avgFitness/mPopulation.size(); }
         String output = "Generation: " + generationCount;
         output += "\t AvgFitness: " + avgFitness;
@@ -119,6 +130,10 @@ public class GAGhostController extends IndividualGhostController {
         return output;
     }
 
+    /**
+     * @class Gene: represents a series of actions for Pac-man to take (phenotype)
+     * through the use of an integer array of values between 0 and 3 (genotype).
+     */
     public class Gene{
 
         protected float mFitness;
@@ -136,10 +151,20 @@ public class GAGhostController extends IndividualGhostController {
 
         /**
          * Randomizes the numbers on the mChromosome array to values between 0 and 3
+         * according to the available moves at the junction / corner.
          */
-        //TODO
         public void randomizeChromosome(){
-
+            int location = virtual_game.getGhostCurrentNodeIndex(ghost);
+            int nextAction;
+            for(int i = 0; i < CHROMOSOME_SIZE; i++){
+                Constants.MOVE[] moves = virtual_game.getPossibleMoves(location);
+                nextAction = new Random().nextInt(moves.length);
+                mChromosome[i] = nextAction;
+                location = virtual_game.getNeighbour(location, moves[nextAction]);
+                while (virtual_game.getNeighbour(location, moves[nextAction]) != -1 && virtual_game.getNeighbouringNodes(location).length <= 2) {
+                    location = virtual_game.getNeighbour(location, moves[nextAction]);
+                }
+            }
         }
 
         /**
@@ -167,6 +192,7 @@ public class GAGhostController extends IndividualGhostController {
          */
         //TODO
         public void mutate(){
+
         }
 
         /**
@@ -200,11 +226,14 @@ public class GAGhostController extends IndividualGhostController {
          */
         public int getChromosomeSize() { return mChromosome.length; }
 
+        /**
+         * Converts the gene's genotype (integer array) into its phenotype (series of actions)
+         * @return string containing gene's phenotype
+         */
         public String getPhenotype() {
             // create an empty string
             StringBuilder result= new StringBuilder();
             for(int i = 0; i < mChromosome.length; i++){
-                // populate it with either A's or a's, depending on the the
                 switch(mChromosome[i]){
                     case 0:
                         result.append("L");

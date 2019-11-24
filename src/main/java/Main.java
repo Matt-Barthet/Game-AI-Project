@@ -27,6 +27,6 @@ public class Main {
         controllers.put(GHOST.PINKY, new Pinky());
         controllers.put(GHOST.SUE, new Sue());
 
-        executor.runGame(new InformationSetMCTSPacMan(), new MASController(controllers), 10);
+        executor.runGameTimed(new InformationSetMCTSPacMan(), new MASController(controllers));
     }
 }

@@ -13,8 +13,9 @@ public class Inky extends GAGhostController {
         super(Constants.GHOST.INKY);
     }
 
+    /*
     @Override
     public Constants.MOVE getMove(Game game, long timeDue) {
         return null;
-    }
+    }*/
 }

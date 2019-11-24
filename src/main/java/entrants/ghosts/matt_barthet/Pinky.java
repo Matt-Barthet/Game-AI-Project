@@ -13,8 +13,10 @@ public class Pinky extends GAGhostController {
         super(Constants.GHOST.PINKY);
     }
 
+    /*
     @Override
     public Constants.MOVE getMove(Game game, long timeDue) {
         return null;
     }
+    */
 }

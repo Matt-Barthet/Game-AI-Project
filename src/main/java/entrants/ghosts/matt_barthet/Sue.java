@@ -13,8 +13,10 @@ public class Sue extends GAGhostController {
         super(Constants.GHOST.SUE);
     }
 
+    /*
     @Override
-    public Constants.MOVE getMove(Game game, long timeDue) {
+        public Constants.MOVE getMove(Game game, long timeDue) {
         return null;
     }
+    */
 }
