@@ -30,6 +30,7 @@ public class GAGhostController extends IndividualGhostController {
     public GAGhostController(Constants.GHOST ghost) {
         super(ghost);
         mPopulation = new ArrayList<Gene>();
+        elitePopulation = new ArrayList<Gene>();
     }
 
     //TODO
@@ -75,11 +76,16 @@ public class GAGhostController extends IndividualGhostController {
      * evaluated (e.g based on its performance)
      */
     public void evaluateGeneration(){
-        for(int i = 0; i < mPopulation.size(); i++){
+        for(int i = 0; i < size(); i++){
             //Go through each gene
             //Execute each action in the gene until a junction or corner is hit
             //Track heurestics according to ghost's current strategy and set the gene's fitness
             //Keep top two part of elite population and rest general
+
+            int pacmanScoreBefore = virtual_game.getScore();
+            for(int j = 0; j < CHROMOSOME_SIZE; j++){
+                //virtual_game.advanceGame(virtual_game, getGene(i).getChromosomeElement(j));
+            }
         }
     }
 
@@ -90,22 +96,49 @@ public class GAGhostController extends IndividualGhostController {
      * If you want to use mutation, this function is where any mutation chances are rolled and mutation takes place.
      */
     public void produceNextGeneration(){
+
+        //Next generation of the population stored here
         ArrayList<Gene> newPopulation = new ArrayList<>();
-        for(int i = 0; i < elitePopulation.size(); i++){
-            newPopulation.add(mPopulation.get(i));
+
+        //Add the elite population straight into the new population with no crossover or mutation
+        while (elitePopulation.size() != 0){
+            newPopulation.add(elitePopulation.get(0));
+            elitePopulation.remove(0);
         }
-        for(int i = 0; i < size() / 2; i++){
-            Gene [] newPair = getGene(i).reproduce(mPopulation.get(i + size() / 2));
+
+        //Take the rest of the population, pair them together and produce new genes - mutate new genes at specified rate
+        while(size() != 0){
+
+            //Other gene's element to be paired with the current one
+            int otherGene = new Random().nextInt(mPopulation.size() - 1) + 1;
+
+            //Store the produced genes in an array for later use
+            Gene [] newPair = getGene(0).reproduce(mPopulation.get(otherGene));
+
+            //System.out.println("Parent Chromosomes: " + getPhenotype(mPopulation.get(0).mChromosome) + ", " + getPhenotype(mPopulation.get(otherGene).mChromosome));
+
+            //Remove the genes from the old population pool
+            mPopulation.remove(otherGene);
+            mPopulation.remove(0);
+
+            //Roll a die and check whether to mutate new genes
             if(new Random().nextInt(101) < MUTATION_RATE){
                 newPair[0].mutate();
             }
             if(new Random().nextInt(101) < MUTATION_RATE){
                 newPair[1].mutate();
             }
+
+            //Add the newly generated and modified genes to the new generation pool
             newPopulation.add(newPair[0]);
             newPopulation.add(newPair[1]);
+
+            //System.out.println("Child 1 Chromosome: " + getPhenotype(newPair[0].mChromosome));
+            //System.out.println("Child 2 Chromosome: " + getPhenotype(newPair[1].mChromosome));
         }
-        mPopulation = newPopulation;
+
+        //Set the population to the new generation of genes
+        mPopulation = (ArrayList)newPopulation.clone();
     }
 
     /**
@@ -135,11 +168,11 @@ public class GAGhostController extends IndividualGhostController {
             avgFitness += currFitness;
             if(currFitness < minFitness){
                 minFitness = currFitness;
-                worstIndividual = getGene(i).getPhenotype();
+                worstIndividual = getPhenotype(getGene(i).mChromosome);
             }
             if(currFitness > maxFitness){
                 maxFitness = currFitness;
-                bestIndividual = getGene(i).getPhenotype();
+                bestIndividual = getPhenotype(getGene(i).mChromosome);
             }
         }
         if(mPopulation.size()>0){ avgFitness = avgFitness/mPopulation.size(); }
@@ -148,6 +181,25 @@ public class GAGhostController extends IndividualGhostController {
         output += "\t MinFitness: " + minFitness + " (" + worstIndividual +")";
         output += "\t MaxFitness: " + maxFitness + " (" + bestIndividual +")";
         return output;
+    }
+
+    /**
+     * Converts the gene's genotype (integer array) into its phenotype (series of actions)
+     * @return string containing gene's phenotype
+     */
+    String getPhenotype(MOVE [] mChromosome) {
+        StringBuilder result= new StringBuilder();
+        for(int i = 0; i < mChromosome.length; i++){
+            if(mChromosome[i] == MOVE.LEFT)
+                result.append("L");
+            if(mChromosome[i] == MOVE.RIGHT)
+                result.append("R");
+            if(mChromosome[i] == MOVE.UP)
+                result.append("U");
+            if(mChromosome[i] == MOVE.DOWN)
+                result.append("D");
+        }
+        return result.toString();
     }
 
     /**
@@ -204,10 +256,19 @@ public class GAGhostController extends IndividualGhostController {
          * These offspring will need to be added to the next generation.
          */
         public Gene[] reproduce(Gene other){
+
+            //Creating objects for the offspring of the chosen parents
             Gene[] result = new Gene[2];
+            result[0] = new Gene();
+            result[1] = new Gene();
+
+            //Choose a random point for the crossover to flip
             int point = new Random().nextInt(CHROMOSOME_SIZE);
+            //System.out.println("Using n-point crossover, n = " + point);
+
+            //Loop through the chromosomes, taking elements from one parent and flipping to the other at n
             for (int i = 0; i < CHROMOSOME_SIZE; i++){
-                if(i <= point){
+                if(i < point){
                     result[0].setChromosomeElement(i, getChromosomeElement(i));
                     result[1].setChromosomeElement(i, other.getChromosomeElement(i));
                 } else {
@@ -215,6 +276,8 @@ public class GAGhostController extends IndividualGhostController {
                     result[0].setChromosomeElement(i, other.getChromosomeElement(i));
                 }
             }
+
+            //Return the new genes created in an array of Genes
             return result;
         }
 
@@ -226,12 +289,21 @@ public class GAGhostController extends IndividualGhostController {
          * or (more often) on a gene which will not produce any offspring afterwards.
          */
         public void mutate(){
+
+            //Loop through the chromosome and mutate the bits of the gene by choosing any random action
+            //other than the current one.
             for(int i = 0; i < CHROMOSOME_SIZE; i++){
-                MOVE newMove =  POSSIBLE_MOVES[new Random().nextInt(POSSIBLE_MOVES.length)];
-                while(newMove != mChromosome[i]){
-                    newMove = POSSIBLE_MOVES[new Random().nextInt(POSSIBLE_MOVES.length)];
+
+                //Roll a die and check whether the bit should be mutated or not
+                if(new Random().nextInt(100) + 1 < MUTATION_RATE){
+                    MOVE newMove =  POSSIBLE_MOVES[new Random().nextInt(POSSIBLE_MOVES.length)];
+
+                    //Keep assigning a new random move until the move is different to the original one
+                    while(newMove != mChromosome[i]){
+                        newMove = POSSIBLE_MOVES[new Random().nextInt(POSSIBLE_MOVES.length)];
+                    }
+                    setChromosomeElement(i, newMove);
                 }
-                setChromosomeElement(i, newMove);
             }
         }
 
@@ -265,25 +337,6 @@ public class GAGhostController extends IndividualGhostController {
          * @return the size of the mChromosome array
          */
         public int getChromosomeSize() { return mChromosome.length; }
-
-        /**
-         * Converts the gene's genotype (integer array) into its phenotype (series of actions)
-         * @return string containing gene's phenotype
-         */
-        String getPhenotype() {
-            StringBuilder result= new StringBuilder();
-            for(int i = 0; i < mChromosome.length; i++){
-                if(mChromosome[i] == MOVE.LEFT)
-                    result.append("L");
-                if(mChromosome[i] == MOVE.RIGHT)
-                    result.append("R");
-                if(mChromosome[i] == MOVE.UP)
-                    result.append("U");
-                if(mChromosome[i] == MOVE.DOWN)
-                    result.append("D");
-            }
-            return result.toString();
-        }
 
     };
 }
