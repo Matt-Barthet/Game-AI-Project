@@ -4,6 +4,8 @@ import pacman.controllers.IndividualGhostController;
 import pacman.game.Constants;
 import pacman.game.Constants.MOVE;
 import pacman.game.Game;
+import pacman.game.comms.Message;
+import pacman.game.internal.Ghost;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -14,7 +16,7 @@ public class GAGhostController extends IndividualGhostController {
     private final static float CONSISTENCY = 0.9f;    //attack Ms Pac-Man with this probability
     private final static int PILL_PROXIMITY = 15;        //if Ms Pac-Man is this close to a power pill, back away
     private final static int CHROMOSOME_SIZE = 10;
-    private final static int POPULATION_SIZE = 10;
+    private final static int POPULATION_SIZE = 100;
     private final static int COMPUTATIONAL_BUDGET = 40;
     private final static int MUTATION_RATE = 35;
     private final static MOVE[] POSSIBLE_MOVES = new MOVE[]{MOVE.LEFT, MOVE.RIGHT, MOVE.UP, MOVE.DOWN};
@@ -36,18 +38,20 @@ public class GAGhostController extends IndividualGhostController {
     //TODO
     public MOVE getMove(Game game, long timeDue) {
         this.virtual_game = game.copy();
-
+        mPopulation = new ArrayList<Gene>();
+        elitePopulation = new ArrayList<Gene>();
         if(virtual_game.doesGhostRequireAction(ghost)){
             for(int i = 0; i < POPULATION_SIZE; i++){
                 Gene entry = new Gene();
                 entry.randomizeChromosome();
                 mPopulation.add(entry);
             }
-
             int generationCount = geneticAlgorithm();
         }
 
-        return null;
+        int random = new Random().nextInt(4);
+        MOVE [] moves = new MOVE[]{MOVE.LEFT, MOVE.UP, MOVE.RIGHT, MOVE.DOWN};
+        return moves[1];
     }
 
     /**
@@ -57,11 +61,13 @@ public class GAGhostController extends IndividualGhostController {
      * @return the number of generations evolved during the budgeted period.
      */
     public int geneticAlgorithm(){
+
         int generationCount = 0;
+        float averageFitness;
         long start = new Date().getTime();
         while(new Date().getTime() < start + COMPUTATIONAL_BUDGET){
             evaluateGeneration();
-            //System.out.println(printEvaluation(generationCount));
+            averageFitness = printEvaluation(generationCount);
             produceNextGeneration();
             generationCount++;
         }
@@ -76,16 +82,55 @@ public class GAGhostController extends IndividualGhostController {
      * evaluated (e.g based on its performance)
      */
     public void evaluateGeneration(){
-        for(int i = 0; i < size(); i++){
-            //Go through each gene
-            //Execute each action in the gene until a junction or corner is hit
-            //Track heurestics according to ghost's current strategy and set the gene's fitness
-            //Keep top two part of elite population and rest general
+        Gene mostFit = null, secondMostFit = null;
+        int bestFit = Integer.MIN_VALUE, secondBestFit = Integer.MIN_VALUE, worstFit = Integer.MAX_VALUE;
+        int worstFitLocation = 0;
 
-            int pacmanScoreBefore = virtual_game.getScore();
+        for(int i = 0; i < size(); i++){
+            /*----------------------------------------------------------------------------------------*/
+            /*                                    Fitness Function                                    */
+            /*----------------------------------------------------------------------------------------*/
+            int fitness = 0;
             for(int j = 0; j < CHROMOSOME_SIZE; j++){
-                //virtual_game.advanceGame(virtual_game, getGene(i).getChromosomeElement(j));
+                if(mPopulation.get(i).getChromosomeElement(j) == MOVE.LEFT){
+                    fitness += 1;
+                }
             }
+            mPopulation.get(i).setFitness(fitness);
+
+            /*----------------------------------------------------------------------------------------*/
+            /*                                  Checking Best Genes                                   */
+            /*----------------------------------------------------------------------------------------*/
+            if(fitness > bestFit){
+                mostFit = mPopulation.get(i);
+                bestFit = fitness;
+            } else if (fitness > secondBestFit){
+                secondMostFit = mPopulation.get(i);
+                secondBestFit = fitness;
+            } else if (fitness < worstFit){
+                worstFit = fitness;
+                worstFitLocation = i;
+            }
+        }
+
+        assert mostFit != null;
+        mPopulation.get(worstFitLocation).mChromosome = mostFit.mChromosome.clone();
+        elitePopulation.add(mostFit);
+        elitePopulation.add(secondMostFit);
+    }
+
+    public Gene  tournamentSelection(){
+        Gene [] competition = new Gene[3];
+        competition[0] = mPopulation.get(new Random().nextInt(size()));
+        competition[1] = mPopulation.get(new Random().nextInt(size()));
+        competition[2] = mPopulation.get(new Random().nextInt(size()));
+
+        if(competition[0].getFitness() >= competition[1].getFitness() && competition[0].getFitness() >= competition[2].getFitness()){
+            return competition[0];
+        } else if (competition[1].getFitness() >= competition[0].getFitness() && competition[1].getFitness() >= competition[2].getFitness()){
+            return competition[1];
+        } else {
+            return competition[2];
         }
     }
 
@@ -103,38 +148,27 @@ public class GAGhostController extends IndividualGhostController {
         //Add the elite population straight into the new population with no crossover or mutation
         while (elitePopulation.size() != 0){
             newPopulation.add(elitePopulation.get(0));
+            mPopulation.remove(elitePopulation.get(0));
             elitePopulation.remove(0);
         }
 
         //Take the rest of the population, pair them together and produce new genes - mutate new genes at specified rate
-        while(size() != 0){
+        while(newPopulation.size() < POPULATION_SIZE){
 
-            //Other gene's element to be paired with the current one
-            int otherGene = new Random().nextInt(mPopulation.size() - 1) + 1;
+            //Select two genes from the population using tournament selection (size 3)
+            Gene parent1 = tournamentSelection();
+            Gene parent2 = tournamentSelection();
 
             //Store the produced genes in an array for later use
-            Gene [] newPair = getGene(0).reproduce(mPopulation.get(otherGene));
-
-            //System.out.println("Parent Chromosomes: " + getPhenotype(mPopulation.get(0).mChromosome) + ", " + getPhenotype(mPopulation.get(otherGene).mChromosome));
-
-            //Remove the genes from the old population pool
-            mPopulation.remove(otherGene);
-            mPopulation.remove(0);
+            Gene [] newPair = parent1.reproduce(parent2);
 
             //Roll a die and check whether to mutate new genes
-            if(new Random().nextInt(101) < MUTATION_RATE){
-                newPair[0].mutate();
-            }
-            if(new Random().nextInt(101) < MUTATION_RATE){
-                newPair[1].mutate();
-            }
+            newPair[0].mutate();
+            newPair[1].mutate();
 
             //Add the newly generated and modified genes to the new generation pool
             newPopulation.add(newPair[0]);
             newPopulation.add(newPair[1]);
-
-            //System.out.println("Child 1 Chromosome: " + getPhenotype(newPair[0].mChromosome));
-            //System.out.println("Child 2 Chromosome: " + getPhenotype(newPair[1].mChromosome));
         }
 
         //Set the population to the new generation of genes
@@ -157,12 +191,13 @@ public class GAGhostController extends IndividualGhostController {
      * @param generationCount: the current generation count of the population
      * @return the evaluation of the population's fitness values.
      */
-    private String printEvaluation(int generationCount){
+    private float printEvaluation(int generationCount){
         float avgFitness=0.f;
         float minFitness=Float.POSITIVE_INFINITY;
         float maxFitness=Float.NEGATIVE_INFINITY;
-        String bestIndividual="";
-        String worstIndividual="";
+        String bestIndividual= "";
+        String worstIndividual= "";
+
         for(int i = 0; i < mPopulation.size(); i++){
             float currFitness = getGene(i).getFitness();
             avgFitness += currFitness;
@@ -180,7 +215,9 @@ public class GAGhostController extends IndividualGhostController {
         output += "\t AvgFitness: " + avgFitness;
         output += "\t MinFitness: " + minFitness + " (" + worstIndividual +")";
         output += "\t MaxFitness: " + maxFitness + " (" + bestIndividual +")";
-        return output;
+        output += "\t Population Size: " + size();
+        System.out.println(output);
+        return avgFitness;
     }
 
     /**
@@ -189,14 +226,14 @@ public class GAGhostController extends IndividualGhostController {
      */
     String getPhenotype(MOVE [] mChromosome) {
         StringBuilder result= new StringBuilder();
-        for(int i = 0; i < mChromosome.length; i++){
-            if(mChromosome[i] == MOVE.LEFT)
+        for (MOVE move : mChromosome) {
+            if (move == MOVE.LEFT)
                 result.append("L");
-            if(mChromosome[i] == MOVE.RIGHT)
+            if (move == MOVE.RIGHT)
                 result.append("R");
-            if(mChromosome[i] == MOVE.UP)
+            if (move == MOVE.UP)
                 result.append("U");
-            if(mChromosome[i] == MOVE.DOWN)
+            if (move == MOVE.DOWN)
                 result.append("D");
         }
         return result.toString();
@@ -297,7 +334,6 @@ public class GAGhostController extends IndividualGhostController {
                 //Roll a die and check whether the bit should be mutated or not
                 if(new Random().nextInt(100) + 1 < MUTATION_RATE){
                     MOVE newMove =  POSSIBLE_MOVES[new Random().nextInt(POSSIBLE_MOVES.length)];
-
                     //Keep assigning a new random move until the move is different to the original one
                     while(newMove != mChromosome[i]){
                         newMove = POSSIBLE_MOVES[new Random().nextInt(POSSIBLE_MOVES.length)];
