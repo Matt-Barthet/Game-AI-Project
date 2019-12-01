@@ -4,8 +4,7 @@ import pacman.controllers.IndividualGhostController;
 import pacman.game.Constants;
 import pacman.game.Constants.MOVE;
 import pacman.game.Game;
-import pacman.game.comms.Message;
-import pacman.game.internal.Ghost;
+import pacman.game.comms.*;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -13,65 +12,73 @@ import java.util.Random;
 
 public class GAGhostController extends IndividualGhostController {
 
-    private final static float CONSISTENCY = 0.9f;    //attack Ms Pac-Man with this probability
-    private final static int PILL_PROXIMITY = 15;        //if Ms Pac-Man is this close to a power pill, back away
+    /**
+     * Initialising constant properties of the ghost team which may influence their actions
+     * during run time.
+     */
+    private final static float CONSISTENCY = 0.9f;
+    private final static int PILL_PROXIMITY = 15;
+    private final static MOVE[] POSSIBLE_MOVES = new MOVE[]{MOVE.LEFT, MOVE.RIGHT, MOVE.UP, MOVE.DOWN};
+
+    /**
+     * Initialising constants and variables required for the genetic algorithm.
+     */
     private final static int CHROMOSOME_SIZE = 10;
     private final static int POPULATION_SIZE = 100;
     private final static int COMPUTATIONAL_BUDGET = 40;
     private final static int MUTATION_RATE = 35;
-    private final static MOVE[] POSSIBLE_MOVES = new MOVE[]{MOVE.LEFT, MOVE.RIGHT, MOVE.UP, MOVE.DOWN};
-
+    private final static int ELITE_COUNT = 2;
     private ArrayList<Gene> mPopulation;
     private ArrayList<Gene> elitePopulation;
+    private Gene chosenIndividual;
     private Game virtual_game;
+    private Messenger messenger;
 
     /**
      * Creates the starting population of Gene classes, whose chromosome contents are random
      * @size: The size of the population is passed as an argument from the main class
      */
-    public GAGhostController(Constants.GHOST ghost) {
+    GAGhostController(Constants.GHOST ghost) {
         super(ghost);
-        mPopulation = new ArrayList<Gene>();
-        elitePopulation = new ArrayList<Gene>();
+        mPopulation = new ArrayList<>();
+        elitePopulation = new ArrayList<>();
     }
 
-    //TODO
+
     public MOVE getMove(Game game, long timeDue) {
         this.virtual_game = game.copy();
-        mPopulation = new ArrayList<Gene>();
-        elitePopulation = new ArrayList<Gene>();
+        mPopulation.clear();
+        elitePopulation.clear();
+        messenger = virtual_game.getMessenger();
         if(virtual_game.doesGhostRequireAction(ghost)){
             for(int i = 0; i < POPULATION_SIZE; i++){
                 Gene entry = new Gene();
                 entry.randomizeChromosome();
                 mPopulation.add(entry);
             }
-            int generationCount = geneticAlgorithm();
-        }
 
-        int random = new Random().nextInt(4);
-        MOVE [] moves = new MOVE[]{MOVE.LEFT, MOVE.UP, MOVE.RIGHT, MOVE.DOWN};
-        return moves[1];
+            geneticAlgorithm();
+            messenger.addMessage(new GAMessage(ghost, null, GAMessage.MessageType.I_AM_HEADING, chosenIndividual.mChromosome, virtual_game.getCurrentLevelTime()));
+            return chosenIndividual.mChromosome[0];
+        }
+        return MOVE.NEUTRAL;
     }
 
     /**
      * Function to perform the genetic algorithm as long as it is within computational
      * budget. Once complete the individual with the best fitness in the resulting
      * population is chosen as Pac-man's best action.
-     * @return the number of generations evolved during the budgeted period.
      */
-    public int geneticAlgorithm(){
+    private void geneticAlgorithm(){
 
         int generationCount = 0;
-        float averageFitness;
         long start = new Date().getTime();
         while(new Date().getTime() < start + COMPUTATIONAL_BUDGET){
             evaluateGeneration();
-            averageFitness = printEvaluation(generationCount);
+            //printEvaluation(generationCount);
             produceNextGeneration();
             generationCount++;
         }
-        return generationCount;
     }
 
     /**
@@ -81,16 +88,25 @@ public class GAGhostController extends IndividualGhostController {
      * behavior, the phenotype may need to be used in a full simulation before getting
      * evaluated (e.g based on its performance)
      */
-    public void evaluateGeneration(){
-        Gene mostFit = null, secondMostFit = null;
-        int bestFit = Integer.MIN_VALUE, secondBestFit = Integer.MIN_VALUE, worstFit = Integer.MAX_VALUE;
+    private void evaluateGeneration(){
+        Gene mostFit = null;
+        Gene secondMostFit = null;
+        int bestFit = Integer.MIN_VALUE;
+        int secondBestFit = Integer.MIN_VALUE;
+        int worstFit = Integer.MAX_VALUE;
         int worstFitLocation = 0;
 
+        for (Message message : messenger.getMessages(ghost)) {
+            if (message.getType() == GAMessage.MessageType.I_AM_HEADING) {
+               System.out.println(message.stringRepresentation("\t"));
+            }
+        }
         for(int i = 0; i < size(); i++){
             /*----------------------------------------------------------------------------------------*/
             /*                                    Fitness Function                                    */
             /*----------------------------------------------------------------------------------------*/
             int fitness = 0;
+
             for(int j = 0; j < CHROMOSOME_SIZE; j++){
                 if(mPopulation.get(i).getChromosomeElement(j) == MOVE.LEFT){
                     fitness += 1;
@@ -119,7 +135,7 @@ public class GAGhostController extends IndividualGhostController {
         elitePopulation.add(secondMostFit);
     }
 
-    public Gene  tournamentSelection(){
+    private Gene  tournamentSelection(){
         Gene [] competition = new Gene[3];
         competition[0] = mPopulation.get(new Random().nextInt(size()));
         competition[1] = mPopulation.get(new Random().nextInt(size()));
@@ -140,15 +156,16 @@ public class GAGhostController extends IndividualGhostController {
      * partially or completely. The population size, however, should always remain the same.
      * If you want to use mutation, this function is where any mutation chances are rolled and mutation takes place.
      */
-    public void produceNextGeneration(){
+    private void produceNextGeneration(){
 
         //Next generation of the population stored here
         ArrayList<Gene> newPopulation = new ArrayList<>();
 
         //Add the elite population straight into the new population with no crossover or mutation
-        while (elitePopulation.size() != 0){
+        for(int i = 0; i < ELITE_COUNT; i++){
             newPopulation.add(elitePopulation.get(0));
             mPopulation.remove(elitePopulation.get(0));
+            chosenIndividual = elitePopulation.get(0);
             elitePopulation.remove(0);
         }
 
@@ -180,7 +197,7 @@ public class GAGhostController extends IndividualGhostController {
      * @param index: the position in the population of the Gene we want to retrieve
      * @return the Gene at position <b>index</b> of the mPopulation arrayList
      */
-    public Gene getGene(int index){ return mPopulation.get(index); }
+    private Gene getGene(int index){ return mPopulation.get(index); }
 
     /**
      * @return the size of the population
@@ -188,10 +205,9 @@ public class GAGhostController extends IndividualGhostController {
     public int size(){ return mPopulation.size(); }
 
     /**
-     * @param generationCount: the current generation count of the population
-     * @return the evaluation of the population's fitness values.
+     * @param generationCount : the current generation count of the population
      */
-    private float printEvaluation(int generationCount){
+    private void printEvaluation(int generationCount){
         float avgFitness=0.f;
         float minFitness=Float.POSITIVE_INFINITY;
         float maxFitness=Float.NEGATIVE_INFINITY;
@@ -217,14 +233,13 @@ public class GAGhostController extends IndividualGhostController {
         output += "\t MaxFitness: " + maxFitness + " (" + bestIndividual +")";
         output += "\t Population Size: " + size();
         System.out.println(output);
-        return avgFitness;
     }
 
     /**
      * Converts the gene's genotype (integer array) into its phenotype (series of actions)
      * @return string containing gene's phenotype
      */
-    String getPhenotype(MOVE [] mChromosome) {
+    private String getPhenotype(MOVE[] mChromosome) {
         StringBuilder result= new StringBuilder();
         for (MOVE move : mChromosome) {
             if (move == MOVE.LEFT)
@@ -292,7 +307,7 @@ public class GAGhostController extends IndividualGhostController {
          * @return Array of Gene offspring (default length of array is 2).
          * These offspring will need to be added to the next generation.
          */
-        public Gene[] reproduce(Gene other){
+        Gene[] reproduce(Gene other){
 
             //Creating objects for the offspring of the chosen parents
             Gene[] result = new Gene[2];
@@ -325,7 +340,7 @@ public class GAGhostController extends IndividualGhostController {
          * before reproduction takes place, an offspring at the time it is created,
          * or (more often) on a gene which will not produce any offspring afterwards.
          */
-        public void mutate(){
+        void mutate(){
 
             //Loop through the chromosome and mutate the bits of the gene by choosing any random action
             //other than the current one.
@@ -347,19 +362,19 @@ public class GAGhostController extends IndividualGhostController {
          * Sets the fitness, after it is evaluated in the GeneticAlgorithm class.
          * @param value: the fitness value to be set
          */
-        public void setFitness(float value) { mFitness = value; }
+        void setFitness(float value) { mFitness = value; }
 
         /**
          * @return the gene's fitness value
          */
-        public float getFitness() { return mFitness; }
+        float getFitness() { return mFitness; }
 
         /**
          * Returns the element at position <b>index</b> of the mChromosome array
          * @param index: the position on the array of the element we want to access
          * @return the value of the element we want to access (0 or 1)
          */
-        public MOVE getChromosomeElement(int index){ return mChromosome[index]; }
+        MOVE getChromosomeElement(int index){ return mChromosome[index]; }
 
         /**
          * Sets a <b>value</b> to the element at position <b>index</b> of the mChromosome array
@@ -375,6 +390,70 @@ public class GAGhostController extends IndividualGhostController {
         public int getChromosomeSize() { return mChromosome.length; }
 
     };
+
+    class GAMessage implements Message{
+        private final Constants.GHOST sender;
+        private final Constants.GHOST recipient;
+        private final MessageType type;
+        private final MOVE[] data;
+        private final int tick;
+
+        /**
+         * Message for Multi-Agent Ghost Team
+         *
+         * @param sender    The individual ghost that sent this
+         * @param recipient The individual ghost that this will be delivered to. if null will be delivered to all
+         *                  ghosts except @see{sender}
+         * @param type      The message type
+         * @param data      The data packet of the message
+         * @param tick      The tick the packet was created
+         */
+        public GAMessage(Constants.GHOST sender, Constants.GHOST recipient, MessageType type, MOVE[] data, int tick) {
+            this.sender = sender;
+            this.recipient = recipient;
+            this.type = type;
+            this.data = data;
+            this.tick = tick;
+        }
+
+        @Override
+        public Constants.GHOST getSender() {
+            return sender;
+        }
+
+        @Override
+        public Constants.GHOST getRecipient() {
+            return recipient;
+        }
+
+        @Override
+        public MessageType getType() {
+            return type;
+        }
+
+        public int getData() {
+            return 0;
+        }
+
+        public MOVE[] getMoveChromosome(){
+            return data;
+        }
+
+        @Override
+        public int getTick() {
+            return tick;
+        }
+
+        @Override
+        public String stringRepresentation(String separator) {
+            return "Message" + separator
+                    + sender.name() + separator
+                    + ((recipient == null) ? "NULL" : recipient.name()) + separator
+                    + type.name() + separator
+                    + getPhenotype(data) + separator
+                    + tick;
+        }
+    }
 }
 
 
