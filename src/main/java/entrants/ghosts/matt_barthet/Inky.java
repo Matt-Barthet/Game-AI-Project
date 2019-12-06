@@ -7,15 +7,17 @@ import pacman.game.Game;
 /**
  * Created by Piers on 11/11/2015.
  */
-public class Inky extends GAGhostController {
+public class Inky extends IndividualGhostController {
+
 
     public Inky() {
-        super(Constants.GHOST.INKY);
+        super(Constants.GHOST.BLINKY);
     }
 
-    /*
+
     @Override
     public Constants.MOVE getMove(Game game, long timeDue) {
         return null;
-    }*/
+    }
+
 }

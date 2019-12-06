@@ -7,16 +7,17 @@ import pacman.game.Game;
 /**
  * Created by Piers on 11/11/2015.
  */
-public class Sue extends GAGhostController {
+public class Sue extends IndividualGhostController {
+
 
     public Sue() {
-        super(Constants.GHOST.SUE);
+        super(Constants.GHOST.BLINKY);
     }
 
-    /*
+
     @Override
-        public Constants.MOVE getMove(Game game, long timeDue) {
+    public Constants.MOVE getMove(Game game, long timeDue) {
         return null;
     }
-    */
+
 }
