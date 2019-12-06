@@ -1,7 +1,5 @@
-import entrants.pacman.matt_barthet.MCTSController;
 import examples.StarterGhostComm.*;
 import examples.StarterISMCTS.InformationSetMCTSPacMan;
-//import entrants.ghosts.matt_barthet.*;
 import entrants.pacman.matt_barthet.MyPacMan;
 import pacman.Executor;
 import pacman.controllers.IndividualGhostController;
@@ -28,6 +26,6 @@ public class Main {
         controllers.put(GHOST.PINKY, new Pinky());
         controllers.put(GHOST.SUE, new Sue());
 
-        executor.runGame(new MyPacMan(new MASController(controllers)), new MASController(controllers), 40);
+        executor.runGame(new MyPacMan(), new MASController(controllers), 40);
     }
 }

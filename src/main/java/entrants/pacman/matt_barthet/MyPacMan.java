@@ -1,6 +1,10 @@
 package entrants.pacman.matt_barthet;
 
 import entrants.ghosts.matt_barthet.GAGhostController;
+import examples.StarterGhostComm.Blinky;
+import examples.StarterGhostComm.Inky;
+import examples.StarterGhostComm.Pinky;
+import examples.StarterGhostComm.Sue;
 import pacman.controllers.IndividualGhostController;
 import pacman.controllers.MASController;
 import pacman.controllers.PacmanController;
@@ -11,15 +15,16 @@ import pacman.game.comms.Message;
 import pacman.game.comms.Messenger;
 import pacman.game.info.GameInfo;
 import pacman.game.internal.Ghost;
+import pacman.game.internal.Maze;
 import pacman.game.internal.PacMan;
 import prediction.GhostLocation;
+import prediction.PillModel;
+import prediction.fast.GhostPredictionsFast;
 
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.EnumMap;
-import java.util.Random;
+import java.util.*;
 
 import static pacman.game.Constants.DELAY;
+import static pacman.game.Constants.INTERVAL_WAIT;
 
 /*
  * This is the class you need to modify for your entry. In particular, you need to
@@ -38,31 +43,38 @@ public class MyPacMan extends PacmanController {
      * Initialising constants and variables required for the genetic algorithm.
      */
     private final static int CHROMOSOME_SIZE = 10;
-    private final static int POPULATION_SIZE = 50;
+    private final static int POPULATION_SIZE = 100;
     private final static int COMPUTATIONAL_BUDGET = 40;
     private final static int MUTATION_RATE = 35;
     private final static int ELITE_COUNT = 2;
+
     private ArrayList<Gene> mPopulation;
     private ArrayList<Gene> elitePopulation;
     private Gene chosenIndividual;
-    private Game virtual_game;
     private MASController ghostTeam;
-
+    private int counter = 0, counter2 = 0;
     /**
      * Creates the starting population of Gene classes, whose chromosome contents are random
      * @size: The size of the population is passed as an argument from the main class
      */
-    public MyPacMan(MASController ghostTeam) {
+    public MyPacMan() {
         mPopulation = new ArrayList<>();
         elitePopulation = new ArrayList<>();
-        this.ghostTeam = ghostTeam;
+
+        EnumMap<Constants.GHOST, IndividualGhostController> controllers = new EnumMap<>(Constants.GHOST.class);
+        controllers.put(Constants.GHOST.INKY, new Inky());
+        controllers.put(Constants.GHOST.BLINKY, new Blinky());
+        controllers.put(Constants.GHOST.PINKY, new Pinky());
+        controllers.put(Constants.GHOST.SUE, new Sue());
+        this.ghostTeam = new MASController(controllers);
     }
 
 
     public MOVE getMove(Game game, long timeDue) {
-        this.virtual_game = game;
+
         mPopulation.clear();
         elitePopulation.clear();
+        chosenIndividual = null;
 
         for(int i = 0; i < POPULATION_SIZE; i++){
             Gene entry = new Gene();
@@ -70,7 +82,8 @@ public class MyPacMan extends PacmanController {
             mPopulation.add(entry);
         }
 
-        geneticAlgorithm();
+        geneticAlgorithm(game);
+
         return chosenIndividual.mChromosome[0];
     }
 
@@ -79,12 +92,12 @@ public class MyPacMan extends PacmanController {
      * budget. Once complete the individual with the best fitness in the resulting
      * population is chosen as Pac-man's best action.
      */
-    private void geneticAlgorithm(){
+    private void geneticAlgorithm(Game game){
 
         int generationCount = 0;
         long start = new Date().getTime();
         while(new Date().getTime() < start + COMPUTATIONAL_BUDGET){
-            evaluateGeneration();
+            evaluateGeneration(game);
             printEvaluation(generationCount);
             produceNextGeneration();
             generationCount++;
@@ -98,7 +111,7 @@ public class MyPacMan extends PacmanController {
      * behavior, the phenotype may need to be used in a full simulation before getting
      * evaluated (e.g based on its performance)
      */
-    private void evaluateGeneration(){
+    private void evaluateGeneration(Game game){
         Gene mostFit = null;
         Gene secondMostFit = null;
         int bestFit = Integer.MIN_VALUE;
@@ -111,37 +124,28 @@ public class MyPacMan extends PacmanController {
             /*----------------------------------------------------------------------------------------*/
             /*                                    Fitness Function                                    */
             /*----------------------------------------------------------------------------------------*/
-            Game simulation = virtual_game.copy(true);
-            int fitness = 0;
-            /*for(int j = 0; j < CHROMOSOME_SIZE; j++){
+            Game simulation = constructGameSimulation(game);
+            int fitness = simulation.getScore();
 
+            for(int j = 0; j < CHROMOSOME_SIZE; j++){
                 MOVE nextMove = mPopulation.get(i).getChromosomeElement(j);
 
-                for(int k = 0; k < 6; k++){
-                    int location = simulation.getPacmanCurrentNodeIndex();
-
+                for(int k = 0; k < 10; k++){
                     simulation.advanceGame(nextMove, ghostTeam.getMove());
 
-                    if(location != simulation.getPacmanCurrentNodeIndex()){
-                        System.out.println("PAC-MAN MOVED");
+                    if(simulation.getNeighbour(simulation.getPacmanCurrentNodeIndex(), nextMove) == -1)
+                        break;
+
+                    if(simulation.wasPacManEaten()){
+                        fitness = -100;
+                        mPopulation.get(i).setFitness(fitness);
+                        break;
                     }
 
                 }
-
-                if(simulation.wasPacManEaten())
-                    fitness = Integer.MIN_VALUE;
-                if(simulation.wasPillEaten()) {
-                    fitness += 1;
-                    System.out.println("Pill Eaten");
-                }
-            }*/
-
-            for(int j = 0; j < CHROMOSOME_SIZE; j++){
-                if(mPopulation.get(i).getChromosomeElement(j) == MOVE.DOWN){
-                    fitness++;
-                }
             }
 
+            fitness = -fitness + simulation.getScore();
             mPopulation.get(i).setFitness(fitness);
 
             /*----------------------------------------------------------------------------------------*/
@@ -163,6 +167,13 @@ public class MyPacMan extends PacmanController {
         mPopulation.get(worstFitLocation).mChromosome = mostFit.mChromosome.clone();
         elitePopulation.add(mostFit);
         elitePopulation.add(secondMostFit);
+    }
+
+    private Game constructGameSimulation(Game game){
+        GameInfo virtualGame = game.getPopulatedGameInfo();
+        virtualGame.setPacman(new PacMan(game.getPacmanCurrentNodeIndex(), game.getPacmanLastMoveMade(), 0, false));
+
+        return game.getGameFromInfo(virtualGame);
     }
 
     private Gene tournamentSelection(){
@@ -191,11 +202,12 @@ public class MyPacMan extends PacmanController {
         //Next generation of the population stored here
         ArrayList<Gene> newPopulation = new ArrayList<>();
 
+        chosenIndividual = elitePopulation.get(0);
+
         //Add the elite population straight into the new population with no crossover or mutation
-        for(int i = 0; i < ELITE_COUNT; i++){
+        for(int i = 0; i < ELITE_COUNT; i++) {
             newPopulation.add(elitePopulation.get(0));
             mPopulation.remove(elitePopulation.get(0));
-            chosenIndividual = elitePopulation.get(0);
             elitePopulation.remove(0);
         }
 
@@ -261,7 +273,7 @@ public class MyPacMan extends PacmanController {
         output += "\t AvgFitness: " + avgFitness;
         output += "\t MinFitness: " + minFitness + " (" + worstIndividual +")";
         output += "\t MaxFitness: " + maxFitness + " (" + bestIndividual +")";
-        output += "\t Population Size: " + size();
+        //output += "\t Population Size: " + size();
         System.out.println(output);
     }
 
@@ -316,16 +328,16 @@ public class MyPacMan extends PacmanController {
          * Randomizes the numbers on the mChromosome array to values between 0 and 3
          * according to the available moves at the junction / corner.
          */
-        void randomizeChromosomeJunction(){
-            int location = virtual_game.getPacmanCurrentNodeIndex();
+        void randomizeChromosomeJunction(Game game){
+            int location = game.getPacmanCurrentNodeIndex();
             int nextAction;
             for(int i = 0; i < CHROMOSOME_SIZE; i++){
-                Constants.MOVE[] moves = virtual_game.getPossibleMoves(location);
+                Constants.MOVE[] moves = game.getPossibleMoves(location);
                 nextAction = new Random().nextInt(moves.length);
                 setChromosomeElement(i, moves[nextAction]);
-                location = virtual_game.getNeighbour(location, moves[nextAction]);
-                while (virtual_game.getNeighbour(location, moves[nextAction]) != -1 && virtual_game.getNeighbouringNodes(location).length <= 2) {
-                    location = virtual_game.getNeighbour(location, moves[nextAction]);
+                location = game.getNeighbour(location, moves[nextAction]);
+                while (game.getNeighbour(location, moves[nextAction]) != -1 && game.getNeighbouringNodes(location).length <= 2) {
+                    location = game.getNeighbour(location, moves[nextAction]);
                 }
             }
         }
@@ -346,7 +358,6 @@ public class MyPacMan extends PacmanController {
 
             //Choose a random point for the crossover to flip
             int point = new Random().nextInt(CHROMOSOME_SIZE);
-            //System.out.println("Using n-point crossover, n = " + point);
 
             //Loop through the chromosomes, taking elements from one parent and flipping to the other at n
             for (int i = 0; i < CHROMOSOME_SIZE; i++){
@@ -359,7 +370,6 @@ public class MyPacMan extends PacmanController {
                 }
             }
 
-            //Return the new genes created in an array of Genes
             return result;
         }
 
