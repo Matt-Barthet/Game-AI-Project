@@ -1,6 +1,6 @@
 package entrants.pacman.matt_barthet;
 
-import examples.StarterGhostComm.*;
+import examples.StarterGhost.*;
 import pacman.controllers.*;
 import pacman.game.Constants;
 import pacman.game.Constants.MOVE;
@@ -14,65 +14,56 @@ import java.util.*;
 public class MyPacMan extends PacmanController {
 
     /**
-     * Initialising constant properties of the ghost team which may influence their actions
-     * during run time.
-     */
-    private final static MOVE[] POSSIBLE_MOVES = new MOVE[]{MOVE.LEFT, MOVE.RIGHT, MOVE.UP, MOVE.DOWN};
-
-    /**
      * Initialising constants and variables required for the genetic algorithm.
      */
     private final static int CHROMOSOME_SIZE = 8;
     private final static int POPULATION_SIZE = 100;
     private final static int COMPUTATIONAL_BUDGET = 40;
     private final static int MUTATION_RATE = 50;
-
-    private ArrayList<Gene> mPopulation;
-    private ArrayList<Gene> elitePopulation;
-    private Gene chosenIndividual;
-    private MASController ghostTeam;
-    private PillModel pillModel;
+    private static ArrayList<Gene> mPopulation;
+    private static ArrayList<Gene> elitePopulation;
+    private static Gene chosenIndividual;
+    private static PillModel pillModel;
+    private final static MOVE[] POSSIBLE_MOVES = new MOVE[]{MOVE.LEFT, MOVE.RIGHT, MOVE.UP, MOVE.DOWN};
 
     /**
-     * Creates the starting population of Gene classes, whose chromosome contents are random
-     * @size: The size of the population is passed as an argument from the main class
+     * Initialises the population lists for the genetic algorithm.
      */
     public MyPacMan() {
         mPopulation = new ArrayList<>();
         elitePopulation = new ArrayList<>();
-
-        EnumMap<Constants.GHOST, IndividualGhostController> controllers = new EnumMap<>(Constants.GHOST.class);
-        controllers.put(Constants.GHOST.INKY, new Inky());
-        controllers.put(Constants.GHOST.BLINKY, new Blinky());
-        controllers.put(Constants.GHOST.PINKY, new Pinky());
-        controllers.put(Constants.GHOST.SUE, new Sue());
-        this.ghostTeam = new MASController(controllers);
     }
 
-
+    /**
+     * Returns Ms. Pacman's chosen move for this game tick.
+     * @param game: the current state of the game at this tick.
+     * @param timeDue: how long Ms. Pacman has to decide about her move.
+     * @return the chosen move based on the results of the algorithm.
+     */
     public MOVE getMove(Game game, long timeDue) {
+
+        if(game.isGamePo()){
+            if (pillModel == null) {
+                pillModel = new PillModel(game.getNumberOfPills());
+
+                int[] indices = game.getCurrentMaze().pillIndices;
+                for (int index : indices) {
+                    pillModel.observe(index, true);
+                }
+            }
+
+            // Update the pill model with what isn't available anymore
+            int pillIndex = game.getPillIndex(game.getPacmanCurrentNodeIndex());
+            if (pillIndex != -1) {
+                Boolean pillState = game.isPillStillAvailable(pillIndex);
+                if (pillState != null && !pillState) {
+                    pillModel.observe(pillIndex, false);
+                }
+            }
+        }
 
         mPopulation.clear();
         elitePopulation.clear();
-        chosenIndividual = null;
-
-        if (pillModel == null) {
-            pillModel = new PillModel(game.getNumberOfPills());
-
-            int[] indices = game.getCurrentMaze().pillIndices;
-            for (int index : indices) {
-                pillModel.observe(index, true);
-            }
-        }
-
-        // Update the pill model with what isn't available anymore
-        int pillIndex = game.getPillIndex(game.getPacmanCurrentNodeIndex());
-        if (pillIndex != -1) {
-            Boolean pillState = game.isPillStillAvailable(pillIndex);
-            if (pillState != null && !pillState) {
-                pillModel.observe(pillIndex, false);
-            }
-        }
 
         for(int i = 0; i < POPULATION_SIZE; i++){
             Gene entry = new Gene();
@@ -81,7 +72,6 @@ public class MyPacMan extends PacmanController {
         }
 
         geneticAlgorithm(game);
-
         return chosenIndividual.mChromosome[0];
     }
 
@@ -96,34 +86,48 @@ public class MyPacMan extends PacmanController {
         long start = new Date().getTime();
         while(new Date().getTime() < start + COMPUTATIONAL_BUDGET){
             evaluateGeneration(game);
-            printEvaluation(generationCount);
             produceNextGeneration();
             generationCount++;
         }
+        printEvaluation(generationCount);
     }
 
     /**
      * For all members of the population, runs a heuristic that evaluates their fitness
      * based on their phenotype.
      */
+    //TODO - Fitness function using the appropriate heuristic at any given time.
     private void evaluateGeneration(Game game){
+        Game simulationStart, simulation;
         Gene mostFit = null;
         int bestFit = Integer.MIN_VALUE;
         int worstFit = Integer.MAX_VALUE;
         int worstFitLocation = 0;
         int fitness;
 
+        /*
+          If the game is partially observable, construct a copy of the game based on
+          Ms. Pacmnan's current knowledge of the maze.  Otherwise take a straight up
+          copy of the game data structure for the forward model.
+         */
+        if(game.isGamePo()){
+            simulationStart = getGameSimulation(game.copy());
+        } else {
+            simulationStart = game.copy();
+        }
+
         for(int i = 0; i < mPopulation.size(); i++){
 
-            Game simulation = constructGameSimulation(game);
+            simulation = simulationStart.copy();
             fitness = 0;
 
             for(int j = 0; j < CHROMOSOME_SIZE; j++){
+
                 MOVE nextMove = mPopulation.get(i).getChromosomeElement(j);
 
                 while(true){
 
-                    simulation.advanceGame(nextMove, ghostTeam.getMove());
+                    simulation.advanceGame(nextMove, getBasicGhostMoves(simulation));
 
                     if(simulation.wasPowerPillEaten())
                         fitness += 50 * 2 / (j+1);
@@ -138,19 +142,18 @@ public class MyPacMan extends PacmanController {
                     if(simulation.getNeighbouringNodes(simulation.getPacmanCurrentNodeIndex()).length > 2)
                         break;
                     if(simulation.wasPacManEaten()){
-                        fitness = Integer.MIN_VALUE;
+                        fitness = -1000 / (j+1);
                         break;
                     }
 
                 }
 
-                if(fitness == Integer.MIN_VALUE)
+                if(fitness < 0)
                     break;
             }
 
 
             mPopulation.get(i).setFitness(fitness);
-
 
             if(fitness > bestFit){
                 mostFit = mPopulation.get(i);
@@ -161,21 +164,15 @@ public class MyPacMan extends PacmanController {
             }
         }
 
+        assert mostFit != null;
         mPopulation.get(worstFitLocation).mChromosome = mostFit.mChromosome.clone();
         elitePopulation.add(mostFit);
     }
 
-    private Game constructGameSimulation(Game game){
-        GameInfo virtualGame = game.getPopulatedGameInfo();
-        virtualGame.setPacman(new PacMan(game.getPacmanCurrentNodeIndex(), game.getPacmanLastMoveMade(), 0, false));
-
-        for (int i = 0; i < pillModel.getPills().length(); i++) {
-            virtualGame.setPillAtIndex(i, pillModel.getPills().get(i));
-        }
-
-        return game.getGameFromInfo(virtualGame);
-    }
-
+    /**
+     * Select three random genes from the population and insert them into the tournament.
+     * @return the gene with the best fitness of the three.
+     */
     private Gene tournamentSelection(){
 
         Gene[] competition = new Gene[3];
@@ -195,8 +192,7 @@ public class MyPacMan extends PacmanController {
     /**
      * With each gene's fitness as a guide, chooses which genes should mate and produce offspring.
      * The offspring are added to the population, replacing the previous generation's Genes either
-     * partially or completely. The population size, however, should always remain the same.
-     * If you want to use mutation, this function is where any mutation chances are rolled and mutation takes place.
+     * partially or completely.
      */
     private void produceNextGeneration(){
 
@@ -233,6 +229,52 @@ public class MyPacMan extends PacmanController {
 
         //Set the population to the new generation of genes
         mPopulation = (ArrayList)newPopulation.clone();
+    }
+
+    /**
+     * Take the current game being played and extract all of Ms. Pacman's knowledge of her
+     * surroundings.
+     * @param game: the current state of the game.
+     * @return copy of the game capable of being simulated.
+     */
+    //TODO - Fix bugs in the game state copy
+    private Game getGameSimulation(Game game){
+        GameInfo virtualGame = game.getPopulatedGameInfo();
+        virtualGame.setPacman(new PacMan(game.getPacmanCurrentNodeIndex(), game.getPacmanLastMoveMade(), 0, false));
+
+        for (int i = 0; i < pillModel.getPills().length(); i++) {
+            virtualGame.setPillAtIndex(i, pillModel.getPills().get(i));
+        }
+
+        return game.getGameFromInfo(virtualGame);
+    }
+
+    /**
+     * Function to get basic predictions of the ghost team, sending them directly at Ms. Pacman.
+     * @param game: simulated copy of the current game.
+     * @return moves for each individual ghost team member.
+     */
+    //TODO - Identify how you can tailor this generic function to your project
+    private EnumMap<Constants.GHOST, MOVE> getBasicGhostMoves(Game game) {
+        EnumMap<Constants.GHOST, MOVE> moves = new EnumMap<>(Constants.GHOST.class);
+        int pacmanLocation = game.getPacmanCurrentNodeIndex();
+        for (Constants.GHOST ghost : Constants.GHOST.values()) {
+            int index = game.getGhostCurrentNodeIndex(ghost);
+            MOVE previousMove = game.getGhostLastMoveMade(ghost);
+            if (game.isJunction(index)) {
+                try {
+                    MOVE move = (game.isGhostEdible(ghost))
+                            ? game.getApproximateNextMoveAwayFromTarget(index, pacmanLocation, previousMove, Constants.DM.PATH)
+                            : game.getNextMoveTowardsTarget(index, pacmanLocation, previousMove, Constants.DM.PATH);
+                    moves.put(ghost, move);
+                }catch(NullPointerException npe){
+                    System.err.println("PacmanLocation: " + pacmanLocation + " Maze Index: " + game.getMazeIndex() + " Last Move: " + previousMove);
+                }
+            } else {
+                moves.put(ghost, previousMove);
+            }
+        }
+        return moves;
     }
 
     /**
