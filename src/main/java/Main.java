@@ -19,7 +19,6 @@ public class Main {
 
         Executor executor = new Executor.Builder()
                 .setVisual(true)
-                .setTickLimit(4000)
                 .setPacmanPO(false)
                 .setGhostPO(false)
                 .build();
