@@ -15,21 +15,26 @@ import java.util.EnumMap;
  */
 public class Main {
 
+
     public static void main(String[] args) {
+
+        boolean pacmanPO = false,
+                ghostPO = false;
 
         Executor executor = new Executor.Builder()
                 .setVisual(true)
-                .setPacmanPO(false)
-                .setGhostPO(false)
+                .setPacmanPO(pacmanPO)
+                .setGhostPO(ghostPO)
+                .setTickLimit(Integer.MAX_VALUE)
                 .build();
 
         EnumMap<GHOST, IndividualGhostController> controllers = new EnumMap<>(GHOST.class);
-
         controllers.put(GHOST.INKY, new Inky());
         controllers.put(GHOST.BLINKY, new Blinky());
         controllers.put(GHOST.PINKY, new Pinky());
         controllers.put(GHOST.SUE, new Sue());
 
         executor.runGame(new MyPacMan(), new MASController(controllers), 0);
+        //System.out.println(executor.runExperiment(new MyPacMan(), new MASController(controllers), 5, "Pacman PO: " + pacmanPO + " ghosts PO: " + ghostPO)[0].toString());
     }
 }

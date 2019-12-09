@@ -5,20 +5,23 @@ import pacman.game.Constants;
 import pacman.game.Constants.MOVE;
 import pacman.game.Game;
 import pacman.game.info.GameInfo;
+import pacman.game.internal.Ghost;
 import pacman.game.internal.Maze;
 import pacman.game.internal.PacMan;
+import prediction.GhostLocation;
 import prediction.PillModel;
-
+import prediction.fast.GhostPredictionsFast;
 import java.util.*;
+import java.util.List;
 
 public class MyPacMan extends PacmanController {
 
     /**
      * Initialising constants and variables required for the genetic algorithm.
      */
-    private final static int CHROMOSOME_SIZE = 6;
-    private final static int POPULATION_SIZE = 100;
-    private final static int COMPUTATIONAL_BUDGET = 40;
+    private final static int CHROMOSOME_SIZE = 10;
+    private final static int POPULATION_SIZE = 20;
+    private final static int COMPUTATIONAL_BUDGET = 20;
     private final static int MUTATION_RATE = 50;
     private static ArrayList<Gene> mPopulation;
     private static ArrayList<Gene> elitePopulation;
@@ -30,16 +33,15 @@ public class MyPacMan extends PacmanController {
     private static PillModel pillModel;
     private final static MOVE[] POSSIBLE_MOVES = new MOVE[]{MOVE.LEFT, MOVE.RIGHT, MOVE.UP, MOVE.DOWN};
     private enum Strategy {
-        Score,
+        Pill_Score,
         Pill_Distance,
         Random
     }
     private static Strategy strategy;
     private static Maze currentMaze;
-    private static ArrayList<Integer> targets = new ArrayList<Integer>();
-    private static int[] pills;
-    private static int[] powerPills;
-
+    private static ArrayList<Integer> targets = new ArrayList<>();
+    private int[] ghostEdibleTime;
+    private GhostPredictionsFast predictions;
 
     /**
      * Initialises the population lists for the genetic algorithm.
@@ -47,6 +49,7 @@ public class MyPacMan extends PacmanController {
     public MyPacMan() {
         mPopulation = new ArrayList<>();
         elitePopulation = new ArrayList<>();
+        ghostEdibleTime = new int[Constants.GHOST.values().length];
     }
 
     /**
@@ -58,20 +61,27 @@ public class MyPacMan extends PacmanController {
     public MOVE getMove(Game game, long timeDue) {
 
         if(currentMaze != game.getCurrentMaze()){
+            System.out.println("Starting new Maze!");
             currentMaze = game.getCurrentMaze();
             pillModel = null;
-            strategy = Strategy.Score;
-            System.out.println("New Maze");
+            predictions = null;
+            strategy = Strategy.Pill_Score;
         }
 
         if(game.wasPacManEaten()){
-            strategy = Strategy.Score;
+            System.out.println("Pacman died! Number of lives left: " + game.getPacmanNumberOfLivesRemaining());
+            strategy = Strategy.Pill_Score;
+            predictions = null;
         }
 
         if(game.isGamePo()){
+            if (predictions == null) {
+                predictions = new GhostPredictionsFast(game.getCurrentMaze());
+                predictions.preallocate();
+            }
+
             if (pillModel == null) {
                 pillModel = new PillModel(game.getNumberOfPills());
-
                 int[] indices = game.getCurrentMaze().pillIndices;
                 for (int index : indices) {
                     pillModel.observe(index, true);
@@ -86,19 +96,43 @@ public class MyPacMan extends PacmanController {
                     pillModel.observe(pillIndex, false);
                 }
             }
+
+            // Get observations of ghosts and pass them in to the predictor
+            for (Constants.GHOST ghost : Constants.GHOST.values()) {
+                if (ghostEdibleTime[ghost.ordinal()] != -1) {
+                    ghostEdibleTime[ghost.ordinal()]--;
+                }
+
+                int ghostIndex = game.getGhostCurrentNodeIndex(ghost);
+                if (ghostIndex != -1) {
+                    predictions.observe(ghost, ghostIndex, game.getGhostLastMoveMade(ghost));
+                    ghostEdibleTime[ghost.ordinal()] = game.getGhostEdibleTime(ghost);
+                } else {
+                    List<GhostLocation> locations = predictions.getGhostLocations(ghost);
+                    locations.stream().filter(location -> game.isNodeObservable(location.getIndex())).forEach(location -> {
+                        predictions.observeNotPresent(ghost, location.getIndex());
+                    });
+                }
+            }
         }
 
+        //Clear out Ms. Pacman's previous population of genes
         mPopulation.clear();
         elitePopulation.clear();
 
+        //Create and randomly initialise a new population of genes
         for(int i = 0; i < POPULATION_SIZE; i++){
             Gene entry = new Gene();
             entry.randomizeChromosome();
             mPopulation.add(entry);
         }
 
+        //Compute the genetic algorithm and return the first move of the best fitted individual
         geneticAlgorithm(game);
-        return chosenIndividual.mChromosome[0];
+        if(game.isGamePo())
+            predictions.update();
+
+        return chosenIndividual.getChromosomeElement(0);
     }
 
     /**
@@ -110,26 +144,15 @@ public class MyPacMan extends PacmanController {
     private void geneticAlgorithm(Game game){
         int generationCount = 0;
         long start = new Date().getTime();
-
-        setPillTargets(game);
-        int minDistance = distanceToNearestPill(game);
+        targets = setPillTargets(game);
 
         while(new Date().getTime() < start + COMPUTATIONAL_BUDGET){
             evaluateGeneration(game);
+            //printEvaluation(generationCount++);
             produceNextGeneration();
-            generationCount++;
         }
 
-        if(chosenIndividual.getFitness() == 0 && game.getTotalTime() > 250 && strategy != Strategy.Pill_Distance && minDistance > 50){
-            strategy = Strategy.Pill_Distance;
-            System.out.println("Switching to distance minimizing strategy!");
-        } else if (strategy == Strategy.Pill_Distance && minDistance < 50){
-            strategy = Strategy.Score;
-            System.out.println("Switching back to maximum score strategy!");
-        }
-
-        printEvaluation(generationCount);
-
+        strategy = chooseStrategy(game, chosenIndividual.getFitness(), strategy);
     }
 
     /**
@@ -137,70 +160,23 @@ public class MyPacMan extends PacmanController {
      * based on their phenotype.
      * @param game: the current game being played.
      */
-    //TODO - Fitness function using the appropriate heuristic at any given time.
     private void evaluateGeneration(Game game){
-        Game simulationStart, simulation;
+        Game simulation;
         Gene mostFit = null;
         int bestFit = Integer.MIN_VALUE;
         int worstFit = Integer.MAX_VALUE;
         int worstFitLocation = 0;
         int fitness;
 
-        if(game.isGamePo()){
-            simulationStart = getGameSimulation(game.copy());
-        } else {
-            simulationStart = game.copy();
-        }
-
         for(int geneID = 0; geneID < mPopulation.size(); geneID++){
 
-            simulation = simulationStart.copy();
-            fitness = 0;
-
-            for(int moveID = 1; moveID <= CHROMOSOME_SIZE; moveID++){
-
-                MOVE nextMove = mPopulation.get(geneID).getChromosomeElement(moveID-1);
-
-                while(true){
-
-                    simulation.advanceGame(nextMove, getBasicGhostMoves(simulation));
-
-                    if(strategy == Strategy.Score){
-
-                        if(simulation.wasPowerPillEaten())
-                            fitness += 50 * 2 / (moveID);
-                        if(simulation.wasPillEaten())
-                            fitness += 10 * 2 / (moveID);
-                        for(Constants.GHOST ghost: Constants.GHOST.values())
-                            if(simulation.wasGhostEaten(ghost))
-                                fitness += simulation.getGhostCurrentEdibleScore() * 2 / (moveID);
-
-                    }
-
-                    if(simulation.getNeighbour(simulation.getPacmanCurrentNodeIndex(), nextMove) == -1)
-                        break;
-                    if(simulation.getNeighbouringNodes(simulation.getPacmanCurrentNodeIndex()).length > 2)
-                        break;
-                    if(simulation.wasPacManEaten()){
-                        fitness = -10000;
-                        break;
-                    }
-
-                }
-
-                if(strategy == Strategy.Pill_Distance){
-                    fitness = -distanceToNearestPill(simulation);
-                    if(fitness == 0){
-                        fitness = CHROMOSOME_SIZE - moveID;
-                        break;
-                    }
-
-                } else if(fitness < 0) {
-                    break;
-                }
+            if(game.isGamePo()){
+                simulation = getGameSimulation(game.copy());
+            } else {
+                simulation = game.copy();
             }
 
-
+            fitness = evaluateChromosome(simulation, geneID);
             mPopulation.get(geneID).setFitness(fitness);
 
             if(fitness > bestFit){
@@ -215,7 +191,73 @@ public class MyPacMan extends PacmanController {
         assert mostFit != null;
         mPopulation.get(worstFitLocation).mChromosome = mostFit.mChromosome.clone();
         elitePopulation.add(mostFit);
+    }
 
+    /**
+     * Evaluate the chromosome of an individual using a simulated copy of the game.
+     * @param simulation: a copy of the game used for simulation.
+     * @param geneID: the ID of the gene which the chromosome belongs to.
+     * @return the fitness of the chromosome
+     */
+    private int evaluateChromosome(Game simulation, int geneID){
+        int fitness = 0;
+        for(int moveID = 1; moveID <= CHROMOSOME_SIZE; moveID++){
+
+            MOVE nextMove = mPopulation.get(geneID).getChromosomeElement(moveID-1);
+
+            while(true){
+
+                //Advance another step in the simulation based on the next micro action and ghost actions
+                simulation.advanceGame(nextMove, getBasicGhostMoves(simulation));
+
+                //Stop applying macro action if Ms. Pacman was eaten, and assign a harsh fitness score
+                if(simulation.wasPacManEaten()){
+                    fitness = -50000;
+                    break;
+                }
+
+                /*
+                If Ms. Pacman is currently trying to maximise her score, update the current fitness according
+                to the pills she's eating, adding a bias for pills closer to her current location
+                 */
+                if(strategy == Strategy.Pill_Score){
+                    if(simulation.wasPowerPillEaten()){
+                        fitness += 50 * 2 / (moveID);
+                    }
+                    if(simulation.wasPillEaten())
+                        fitness += 10 * 2 / (moveID);
+                    for(Constants.GHOST ghost: Constants.GHOST.values())
+                        if(simulation.wasGhostEaten(ghost)){
+                            fitness += simulation.getGhostCurrentEdibleScore();
+                        }
+                }
+
+                //If the current micro action leads Ms.Pacman to a junction or barrier, skip to the next action
+                if(simulation.getNeighbour(simulation.getPacmanCurrentNodeIndex(), nextMove) == -1)
+                    break;
+                if(simulation.getNeighbouringNodes(simulation.getPacmanCurrentNodeIndex()).length > 2)
+                    break;
+            }
+
+            //If the result of the last micro action was a death for Ms.Pacman, stop simulating the individual
+            if(fitness == -50000)
+                break;
+
+            /*
+            If Ms.Pacman is trying to close in on a distant pill, update her fitness with the negated distance
+            from her current location in the simulation.
+             */
+            if(strategy == Strategy.Pill_Distance){
+                fitness = -distanceToNearestPill(simulation);
+                //If Ms. Pacman reaches the pill, assign the number of moves it took as the fitness and break
+                if(fitness == 0){
+                    fitness = CHROMOSOME_SIZE - moveID;
+                    break;
+                }
+            }
+        }
+
+        return fitness;
     }
 
     /**
@@ -281,6 +323,30 @@ public class MyPacMan extends PacmanController {
     }
 
     /**
+     * Choose Ms.Pacman's strategy based on the current game state.
+     * @param game: current game being played.
+     * @param bestFitness: fitness of the best individual
+     * @param currentStrategy: the strategy currently being followed by Ms. Pacman.
+     * @return the appropriate strategy based on the current game state.
+     */
+    private Strategy chooseStrategy(Game game, float bestFitness, Strategy currentStrategy) {
+        if (bestFitness == 0 && game.getTotalTime() > 250 && distanceToNearestPill(game) > 50) {
+            if (!game.isGamePo()  && currentStrategy != Strategy.Pill_Distance) {
+                System.out.println("Switching to distance minimizing strategy!");
+                return Strategy.Pill_Distance;
+            } else if(game.isGamePo() && currentStrategy != Strategy.Random){
+                System.out.println("No pills in the area, switching to random exploration strategy!");
+                return Strategy.Random;
+            }
+        } else if(distanceToNearestPill(game) <= 50 && currentStrategy != Strategy.Pill_Score){
+            System.out.println("Switching back to maximum score strategy!");
+            return Strategy.Pill_Score;
+        }
+        return currentStrategy;
+    }
+
+
+    /**
      * Take the current game being played and extract all of Ms. Pacman's knowledge of her
      * surroundings.
      * @param game: the current state of the game.
@@ -290,7 +356,16 @@ public class MyPacMan extends PacmanController {
     private Game getGameSimulation(Game game){
         GameInfo virtualGame = game.getPopulatedGameInfo();
         virtualGame.setPacman(new PacMan(game.getPacmanCurrentNodeIndex(), game.getPacmanLastMoveMade(), 0, false));
-
+        EnumMap<Constants.GHOST, GhostLocation> locations = predictions.sampleLocations();
+        virtualGame.fixGhosts(ghost -> {
+            GhostLocation location = locations.get(ghost);
+            if (location != null) {
+                int edibleTime = ghostEdibleTime[ghost.ordinal()];
+                return new Ghost(ghost, location.getIndex(), edibleTime, 0, location.getLastMoveMade());
+            } else {
+                return new Ghost(ghost, game.getGhostInitialNodeIndex(), 0, 0, MOVE.NEUTRAL);
+            }
+        });
         for (int i = 0; i < pillModel.getPills().length(); i++) {
             virtualGame.setPillAtIndex(i, pillModel.getPills().get(i));
         }
@@ -305,7 +380,6 @@ public class MyPacMan extends PacmanController {
      */
     //TODO - Identify how you can tailor this generic function to your project
     private EnumMap<Constants.GHOST, MOVE> getBasicGhostMoves(Game game) {
-
         EnumMap<Constants.GHOST, MOVE> moves = new EnumMap<>(Constants.GHOST.class);
         int pacmanLocation = game.getPacmanCurrentNodeIndex();
         for (Constants.GHOST ghost : Constants.GHOST.values()) {
@@ -330,10 +404,10 @@ public class MyPacMan extends PacmanController {
      * to go eat.
      * @param game: the chosen game to extract pills from.
      */
-    private void setPillTargets(Game game){
-        targets.clear();
-        pills = game.getActivePillsIndices();
-        powerPills = game.getActivePowerPillsIndices();
+    private ArrayList<Integer> setPillTargets(Game game){
+        ArrayList<Integer> targets = new ArrayList<>();
+        int[] pills = game.getActivePillsIndices();
+        int[] powerPills = game.getActivePowerPillsIndices();
 
         for (int i = 0; i < pills.length; i++) {
             Boolean pillStillAvailable = game.isPillStillAvailable(i);
@@ -352,6 +426,7 @@ public class MyPacMan extends PacmanController {
                 }
             }
         }
+        return targets;
     }
 
     /**
@@ -366,21 +441,8 @@ public class MyPacMan extends PacmanController {
                 return distance;
             }
         }
-        return Integer.MIN_VALUE;
+        return Integer.MAX_VALUE;
     }
-
-
-    /**
-     * Returns the Gene at position <b>index</b> of the mPopulation arrayList
-     * @param index: the position in the population of the Gene we want to retrieve
-     * @return the Gene at position <b>index</b> of the mPopulation arrayList
-     */
-    private Gene getGene(int index){ return mPopulation.get(index); }
-
-    /**
-     * @return the size of the population
-     */
-    public int size(){ return mPopulation.size(); }
 
     /**
      * @param generationCount : the current generation count of the population
@@ -430,6 +492,18 @@ public class MyPacMan extends PacmanController {
         }
         return result.toString();
     }
+
+    /**
+     * Returns the Gene at position <b>index</b> of the mPopulation arrayList
+     * @param index: the position in the population of the Gene we want to retrieve
+     * @return the Gene at position <b>index</b> of the mPopulation arrayList
+     */
+    private Gene getGene(int index){ return mPopulation.get(index); }
+
+    /**
+     * @return the size of the population
+     */
+    private int size(){ return mPopulation.size(); }
 
     /**
      * @class Gene: represents a series of actions for Pac-man to take (phenotype)
