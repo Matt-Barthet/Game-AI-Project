@@ -1,13 +1,17 @@
+import entrants.pacman.matt_barthet.MyPacMan;
 import examples.StarterGhost.Blinky;
 import examples.StarterGhost.Inky;
 import examples.StarterGhost.Pinky;
 import examples.StarterGhost.Sue;
 import examples.StarterGhostComm.*;
-import entrants.pacman.matt_barthet.MyPacMan;
+import examples.StarterISMCTS.InformationSetMCTSPacMan;
 import pacman.Executor;
 import pacman.controllers.IndividualGhostController;
 import pacman.controllers.MASController;
+import pacman.controllers.examples.StarterPacMan;
 import pacman.game.Constants.*;
+import pacman.game.internal.POType;
+
 import java.util.EnumMap;
 
 /**
@@ -18,14 +22,12 @@ public class Main {
 
     public static void main(String[] args) {
 
-        boolean pacmanPO = false,
-                ghostPO = false;
-
         Executor executor = new Executor.Builder()
                 .setVisual(true)
-                .setPacmanPO(pacmanPO)
-                .setGhostPO(ghostPO)
-                .setTickLimit(Integer.MAX_VALUE)
+                .setPacmanPO(true)
+                .setGhostPO(true)
+                .setScaleFactor(2)
+                .setTickLimit(4000)
                 .build();
 
         EnumMap<GHOST, IndividualGhostController> controllers = new EnumMap<>(GHOST.class);
@@ -34,7 +36,8 @@ public class Main {
         controllers.put(GHOST.PINKY, new Pinky());
         controllers.put(GHOST.SUE, new Sue());
 
-        executor.runGame(new MyPacMan(), new MASController(controllers), 0);
+        executor.runGameTimed(new MyPacMan(), new MASController(controllers));
+        //executor.runGameTimed(new examples.StarterPacMan.MyPacMan(), new MASController(controllers));
         //System.out.println(executor.runExperiment(new MyPacMan(), new MASController(controllers), 5, "Pacman PO: " + pacmanPO + " ghosts PO: " + ghostPO)[0].toString());
     }
 }
