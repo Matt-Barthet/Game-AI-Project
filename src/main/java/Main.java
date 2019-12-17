@@ -26,7 +26,7 @@ public class Main {
                 .setVisual(true)
                 .setPacmanPO(true)
                 .setGhostPO(true)
-                .setScaleFactor(2)
+                .setScaleFactor(4)
                 .setTickLimit(4000)
                 .build();
 
@@ -39,5 +39,7 @@ public class Main {
         executor.runGameTimed(new MyPacMan(), new MASController(controllers));
         //executor.runGameTimed(new examples.StarterPacMan.MyPacMan(), new MASController(controllers));
         //System.out.println(executor.runExperiment(new MyPacMan(), new MASController(controllers), 5, "Pacman PO: " + pacmanPO + " ghosts PO: " + ghostPO)[0].toString());
+
+
     }
 }
