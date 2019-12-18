@@ -38,43 +38,40 @@ def extractGeneration(file):
         continue
 
 filename = "Genetic_Data_1576595063636.txt"
+samples = 10
+
 file = open(filename)
-
-
 fig = plt.figure()
-fig.suptitle('Evolution of Standard Fitness Deviation vs Population Generation', fontsize=14, fontweight='bold')
+plt.subplot(1,2,1)
+fig.suptitle('Fitness Evolution vs Population Generation (size = 20, gene length = 5)', fontsize=14, fontweight='bold')
 
-for i in range(0,20):
+for i in range(0,samples):
     generations = []
     averages = []
     stdevs = []
     extractGeneration(file)
     plt.plot(generations, stdevs)
 
-plt.title('size = 20, gene length = 5')
+plt.title('Standard Deviation vs Generation Count')
 plt.ylabel('Standard Fitness Deviation')
 plt.xlabel('Generations')
 plt.grid()
 
-
-fig = plt.figure()
-fig.suptitle('Evolution of Average Fitness vs Population Generation', fontsize=14, fontweight='bold')
-
 file = open(filename)
+plt.subplot(1,2,2)
 
-for i in range(0,20):
+for i in range(0,samples):
     generations = []
     averages = []
     stdevs = []
     extractGeneration(file)
     plt.plot(generations, averages)
 
-plt.title('size = 20, gene length = 5')
+plt.title('Average Fitness vs Generation Count')
 plt.ylabel('Average Fitness')
 plt.xlabel('Generations')
 plt.grid()
 plt.show()
-
 
 
 

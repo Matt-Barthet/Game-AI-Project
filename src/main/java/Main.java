@@ -26,8 +26,8 @@ public class Main {
                 .setVisual(true)
                 .setPacmanPO(true)
                 .setGhostPO(true)
-                .setScaleFactor(4)
-                .setTickLimit(4000)
+                .setScaleFactor(2)
+                .setTickLimit(Integer.MAX_VALUE)
                 .build();
 
         EnumMap<GHOST, IndividualGhostController> controllers = new EnumMap<>(GHOST.class);
