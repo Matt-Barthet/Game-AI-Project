@@ -37,13 +37,13 @@ def extractGeneration(file):
     while(extractLine(file) != "\n"):
         continue
 
-filename = "Genetic_Data_1576595063636.txt"
+filename = "Genetic_Data_1576775302896.txt"
 samples = 10
 
 file = open(filename)
 fig = plt.figure()
 plt.subplot(1,2,1)
-fig.suptitle('Fitness Evolution vs Population Generation (size = 20, gene length = 5)', fontsize=14, fontweight='bold')
+fig.suptitle('Fitness Evolution vs Population Generation (size = 20, gene length = 5, mutation rate = 50%)', fontsize=14, fontweight='bold')
 
 for i in range(0,samples):
     generations = []

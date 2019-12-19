@@ -31,14 +31,19 @@ public class Main {
                 .build();
 
         EnumMap<GHOST, IndividualGhostController> controllers = new EnumMap<>(GHOST.class);
-        controllers.put(GHOST.INKY, new Inky());
-        controllers.put(GHOST.BLINKY, new Blinky());
-        controllers.put(GHOST.PINKY, new Pinky());
-        controllers.put(GHOST.SUE, new Sue());
+        /*controllers.put(GHOST.INKY, new examples.StarterGhost.Inky());
+        controllers.put(GHOST.BLINKY, new examples.StarterGhost.Blinky());
+        controllers.put(GHOST.PINKY, new examples.StarterGhost.Pinky());
+        controllers.put(GHOST.SUE, new examples.StarterGhost.Sue());*/
 
-        executor.runGameTimed(new MyPacMan(), new MASController(controllers));
+        controllers.put(GHOST.INKY, new examples.StarterGhostComm.Inky());
+        controllers.put(GHOST.BLINKY, new examples.StarterGhostComm.Blinky());
+        controllers.put(GHOST.PINKY, new examples.StarterGhostComm.Pinky());
+        controllers.put(GHOST.SUE, new examples.StarterGhostComm.Sue());
+
+        //executor.runGameTimed(new MyPacMan(), new MASController(controllers));
         //executor.runGameTimed(new examples.StarterPacMan.MyPacMan(), new MASController(controllers));
-        //System.out.println(executor.runExperiment(new MyPacMan(), new MASController(controllers), 5, "Pacman PO: " + pacmanPO + " ghosts PO: " + ghostPO)[0].toString());
+        System.out.println(executor.runExperiment(new InformationSetMCTSPacMan(), new MASController(controllers), 30, "Pacman PO: " + true + " ghosts PO: " + true)[0].toString());
 
 
     }
