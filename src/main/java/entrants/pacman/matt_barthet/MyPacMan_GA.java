@@ -4,20 +4,17 @@ import pacman.controllers.*;
 import pacman.game.Constants;
 import pacman.game.Constants.MOVE;
 import pacman.game.Game;
-import pacman.game.info.GameInfo;
-import pacman.game.internal.Ghost;
-import pacman.game.internal.Maze;
-import pacman.game.internal.PacMan;
 import prediction.GhostLocation;
-import prediction.PillModel;
-import prediction.fast.GhostPredictionsFast;
+
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.*;
 import java.util.List;
 
-public class MyPacMan extends PacmanController {
+import static entrants.pacman.matt_barthet.Agent_Utility.*;
+
+public class MyPacMan_GA extends PacmanController {
 
     /**
      * Initialising constants and variables required for the genetic algorithm.
@@ -30,27 +27,17 @@ public class MyPacMan extends PacmanController {
     private static ArrayList<Gene> elitePopulation;
     private static Gene chosenIndividual;
     private final static float alphaWeight = 0.7f, betaWeight = 0.3f;
-
-    /**
-     * Initialising game component variables.
-     */
-    private static PillModel pillModel;
+    private int moveCounter = 0, generationCount = 0;
+    private boolean moveCalculated = false;
+    private Constants.GHOST edibleGhost;
+    private File file = new File("Genetic_Data_" + new Date().getTime() + ".txt");
+    private FileWriter fr;
     private final static MOVE[] POSSIBLE_MOVES = new MOVE[]{MOVE.LEFT, MOVE.RIGHT, MOVE.UP, MOVE.DOWN};
-    private static Maze currentMaze;
-    private int[] ghostEdibleTime;
-    private GhostPredictionsFast predictions;
-
-    File file = new File("Genetic_Data_" + new Date().getTime() + ".txt");
-    FileWriter fr;
-
-    int counter = 0, generationCount = 0;
-    boolean calculated = false;
-    Constants.GHOST edibleGhost;
 
     /**
      * Initialises the population lists for the genetic algorithm.
      */
-    public MyPacMan(){
+    public MyPacMan_GA(){
         mPopulation = new ArrayList<>();
         elitePopulation = new ArrayList<>();
         ghostEdibleTime = new int[Constants.GHOST.values().length];
@@ -64,83 +51,30 @@ public class MyPacMan extends PacmanController {
      */
     public MOVE getMove(Game game, long timeDue) {
 
-        if(currentMaze != game.getCurrentMaze()){
-            System.out.println("Starting a new maze.");
-            currentMaze = game.getCurrentMaze();
-            predictions = null;
-            pillModel = null;
-            Arrays.fill(ghostEdibleTime, -1);
-        }
-
         if (game.gameOver()) return null;
-        if (game.wasPacManEaten()) {
-            System.out.println("Ms. Pacman was eaten. Lives remaining: " + game.getPacmanNumberOfLivesRemaining());
-            predictions = null;
-        }
-        if (predictions == null) {
-            predictions = new GhostPredictionsFast(game.getCurrentMaze());
-            predictions.preallocate();
-        }
 
-        if (pillModel == null){
-            pillModel = new PillModel(game.getNumberOfPills());
-            int[] indices = game.getCurrentMaze().pillIndices;
-            for (int index : indices) {
-                pillModel.observe(index, true);
-            }
-        }
-
-        int[] pills = game.getPillIndices();
-        for (int pill : pills) {
-            int pillIndex = game.getPillIndex(pill);
-            if(pillIndex != -1){
-                Boolean pillStillAvailable = game.isPillStillAvailable(pillIndex);
-                if (pillStillAvailable != null && pillStillAvailable)
-                    pillModel.observe(pillIndex, true);
-            }
-        }
-
-        int[] powerPills = game.getPowerPillIndices();
-        for (int pill : powerPills) {
-            int pillIndex = game.getPillIndex(pill);
-            if(pillIndex!=-1){
-                Boolean pillStillAvailable = game.isPillStillAvailable(pillIndex);
-                if (pillStillAvailable != null && pillStillAvailable)
-                    pillModel.observe(pillIndex, true);
-            }
-        }
-
-        // Update the pill model with what isn't available anymore
-        int pillIndex = game.getPillIndex(game.getPacmanCurrentNodeIndex());
-        if (pillIndex != -1) {
-            Boolean pillState = game.isPillStillAvailable(pillIndex);
-            if (pillState != null && !pillState) {
-                pillModel.observe(pillIndex, false);
-            }
-        }
+        updateObservations(game);
 
         if(chosenIndividual != null){
             //If the current micro action leads Ms.Pacman to a junction or barrier, skip to the next action
             if(game.isJunction(game.getPacmanCurrentNodeIndex())){
                 //System.out.println("Ms. Pacman has reached a junction. Incrementing Move Counter.");
-                counter++;
+                moveCounter++;
             } else {
                 while(true){
-                    if(counter < CHROMOSOME_SIZE && game.getNeighbour(game.getPacmanCurrentNodeIndex(), chosenIndividual.getChromosomeElement(counter)) == -1) {
+                    if(moveCounter < CHROMOSOME_SIZE && game.getNeighbour(game.getPacmanCurrentNodeIndex(), chosenIndividual.getChromosomeElement(moveCounter)) == -1) {
                         //System.out.println("Ms. Pacman has collided with an obstacle. Incrementing Move Counter.");
-                        counter++;
+                        moveCounter++;
                     } else {
                         break;
                     }
                 }
             }
-            if(chosenIndividual.getFitness() == (alphaWeight * normalize(0, 500) + betaWeight * normalize(0, game.getGhostCurrentEdibleScore() * 4)) && CHROMOSOME_SIZE < 10){
-                counter = CHROMOSOME_SIZE;
-                //System.out.println("No pills found, increasing planning distance.");
+            if(chosenIndividual.getFitness() == (alphaWeight * normalize(0, 500) + betaWeight * normalize(0, game.getGhostCurrentEdibleScore() * 4))){
+                moveCounter = CHROMOSOME_SIZE;
             }
         }
 
-        // Get observations of ghosts and pass them in to the predictor
         for (Constants.GHOST ghost : Constants.GHOST.values()) {
             if (ghostEdibleTime[ghost.ordinal()] != -1) {
                 ghostEdibleTime[ghost.ordinal()]--;
@@ -149,14 +83,14 @@ public class MyPacMan extends PacmanController {
             if (ghostIndex != -1) {
                 predictions.observe(ghost, ghostIndex, game.getGhostLastMoveMade(ghost));
                 ghostEdibleTime[ghost.ordinal()] = game.getGhostEdibleTime(ghost);
-                if(counter < CHROMOSOME_SIZE){
-                    Game simulation = getGameSimulation(game.copy());
-                    if(evaluateIndividual(simulation, chosenIndividual, counter + 1) == 0) {
-                        counter = CHROMOSOME_SIZE;
+                if(moveCounter < CHROMOSOME_SIZE){
+                    Game simulation = getGameSimulation(game, predictions, ghostEdibleTime);
+                    if(evaluateIndividual(simulation, chosenIndividual, moveCounter + 1) == 0) {
+                        moveCounter = CHROMOSOME_SIZE;
                         //System.out.println("Ms. Pacman has observed a hostile ghost. Recalculating route!");
                     }
                     if(ghostEdibleTime[ghost.ordinal()] > 0 && edibleGhost == null) {
-                        counter = CHROMOSOME_SIZE;
+                        moveCounter = CHROMOSOME_SIZE;
                         edibleGhost = ghost;
                         //System.out.println("Ms. Pacman has observed a NEW edible ghost. Recalculating route!");
                     } else if (edibleGhost == ghost && ghostEdibleTime[ghost.ordinal()] == 0) {
@@ -173,18 +107,18 @@ public class MyPacMan extends PacmanController {
 
             if(game.wasGhostEaten(ghost) && ghost == edibleGhost) {
                 edibleGhost = null;
-                counter = CHROMOSOME_SIZE;
+                moveCounter = CHROMOSOME_SIZE;
                 //System.out.println("Edible Ghost Eaten");
             }
         }
 
-        if(counter >= CHROMOSOME_SIZE - 1) {
-            counter = 0;
-            calculated = false;
+        if(moveCounter >= CHROMOSOME_SIZE - 1) {
+            moveCounter = 0;
+            moveCalculated = false;
             generationCount = 0;
         }
 
-        if(counter == 0 && !calculated) {
+        if(moveCounter == 0 && !moveCalculated) {
 
             //Clear out Ms. Pacman's previous population of genes
             mPopulation.clear();
@@ -201,7 +135,7 @@ public class MyPacMan extends PacmanController {
             try {
                 fr = new FileWriter(file, true);
                 geneticAlgorithm(game);
-                calculated = true;
+                moveCalculated = true;
                 fr.append("\n");
                 fr.close();
             } catch (IOException e) {
@@ -210,7 +144,7 @@ public class MyPacMan extends PacmanController {
         }
 
         predictions.update();
-        return chosenIndividual.getChromosomeElement(counter);
+        return chosenIndividual.getChromosomeElement(moveCounter);
     }
 
     /**
@@ -239,7 +173,7 @@ public class MyPacMan extends PacmanController {
         Gene mostFit = null;
 
         for(int geneID = 0; geneID < mPopulation.size(); geneID++){
-            Game simulation = getGameSimulation(game.copy());
+            Game simulation = getGameSimulation(game, predictions, ghostEdibleTime);
             fitness = evaluateIndividual(simulation, mPopulation.get(geneID), 1);
             mPopulation.get(geneID).setFitness(fitness);
             if(fitness >= bestFit){
@@ -299,63 +233,6 @@ public class MyPacMan extends PacmanController {
         scoreFitness += simulation.getScore();
 
         return alphaWeight * normalize(scoreFitness, 500) + betaWeight * normalize(distanceFitness, simulation.getGhostCurrentEdibleScore() * 4);
-    }
-
-    private float normalize(float value, float maximum) {
-        float range = maximum - (float) -1;
-        float inZeroRange = (value - (float) -1);
-        return inZeroRange / range;
-    }
-
-
-    /**
-     * Take the current game being played and extract all of Ms. Pacman's knowledge of her
-     * surroundings.
-     * @param game: the current state of the game.
-     * @return copy of the game capable of being simulated.
-     */
-    private Game getGameSimulation(Game game){
-        GameInfo info = game.getPopulatedGameInfo();
-        info.setPacman(new PacMan(game.getPacmanCurrentNodeIndex(), game.getPacmanLastMoveMade(), 0, false));
-        EnumMap<Constants.GHOST, GhostLocation> locations = predictions.sampleLocations();
-        info.fixGhosts(ghost -> {
-            GhostLocation location = locations.get(ghost);
-            if (location != null) {
-                int edibleTime = ghostEdibleTime[ghost.ordinal()];
-                return new Ghost(ghost, location.getIndex(), edibleTime, 0, location.getLastMoveMade());
-            } else {
-                return new Ghost(ghost, game.getGhostInitialNodeIndex(), 0, 0, MOVE.NEUTRAL);
-            }
-        });
-        for (int i = 0; i < pillModel.getPills().length(); i++) {
-            info.setPillAtIndex(i, pillModel.getPills().get(i));
-        }
-        return game.getGameFromInfo(info);
-    }
-
-    /**
-     * Function to get basic predictions of the ghost team, sending them directly at Ms. Pacman.
-     * @param game: simulated copy of the current game.
-     * @return moves for each individual ghost team member.
-     */
-    private EnumMap<Constants.GHOST, MOVE> getBasicGhostMoves(Game game) {
-        EnumMap<Constants.GHOST, MOVE> moves = new EnumMap<>(Constants.GHOST.class);
-        int pacmanLocation = game.getPacmanCurrentNodeIndex();
-        for (Constants.GHOST ghost : Constants.GHOST.values()) {
-            int index = game.getGhostCurrentNodeIndex(ghost);
-            MOVE previousMove = game.getGhostLastMoveMade(ghost);
-            if (game.isJunction(index)) {
-                try {
-                    MOVE move = (game.isGhostEdible(ghost))
-                            ? game.getApproximateNextMoveAwayFromTarget(index, pacmanLocation, previousMove, Constants.DM.PATH)
-                            : game.getNextMoveTowardsTarget(index, pacmanLocation, previousMove, Constants.DM.PATH);
-                    moves.put(ghost, move);
-                }catch(NullPointerException ignored){}
-            } else {
-                moves.put(ghost, previousMove);
-            }
-        }
-        return moves;
     }
 
     /**
@@ -439,6 +316,18 @@ public class MyPacMan extends PacmanController {
     }
 
     /**
+     * Returns the Gene at position <b>index</b> of the mPopulation arrayList
+     * @param index: the position in the population of the Gene we want to retrieve
+     * @return the Gene at position <b>index</b> of the mPopulation arrayList
+     */
+    private Gene getGene(int index){ return mPopulation.get(index); }
+
+    /**
+     * @return the size of the population
+     */
+    private int size(){ return mPopulation.size(); }
+
+    /**
      * Converts the gene's genotype (integer array) into its phenotype (series of actions)
      * @return string containing gene's phenotype
      */
@@ -456,18 +345,6 @@ public class MyPacMan extends PacmanController {
         }
         return result.toString();
     }
-
-    /**
-     * Returns the Gene at position <b>index</b> of the mPopulation arrayList
-     * @param index: the position in the population of the Gene we want to retrieve
-     * @return the Gene at position <b>index</b> of the mPopulation arrayList
-     */
-    private Gene getGene(int index){ return mPopulation.get(index); }
-
-    /**
-     * @return the size of the population
-     */
-    private int size(){ return mPopulation.size(); }
 
     /**
      * @class Gene: represents a series of actions for Pac-man to take (phenotype)
