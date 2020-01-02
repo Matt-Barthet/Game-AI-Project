@@ -32,7 +32,6 @@ public class MyPacMan_GA extends PacmanController {
     private Constants.GHOST edibleGhost;
     private File file = new File("Genetic_Data_" + new Date().getTime() + ".txt");
     private FileWriter fr;
-    private final static MOVE[] POSSIBLE_MOVES = new MOVE[]{MOVE.LEFT, MOVE.RIGHT, MOVE.UP, MOVE.DOWN};
 
     /**
      * Initialises the population lists for the genetic algorithm.

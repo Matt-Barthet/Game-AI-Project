@@ -19,6 +19,7 @@ public class Agent_Utility {
     public static Maze currentMaze;
     public static int[] ghostEdibleTime;
     public static GhostPredictionsFast predictions;
+    public final static Constants.MOVE[] POSSIBLE_MOVES = new Constants.MOVE[]{Constants.MOVE.LEFT, Constants.MOVE.RIGHT, Constants.MOVE.UP, Constants.MOVE.DOWN};
 
     /**
      * Function to check the conditions of the game and update Ms. Pacman's knowledge
