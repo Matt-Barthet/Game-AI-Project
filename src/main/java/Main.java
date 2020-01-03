@@ -1,4 +1,5 @@
 import entrants.pacman.matt_barthet.MyPacMan_GA;
+import entrants.pacman.matt_barthet.MyPacMan_TDL;
 import examples.StarterISMCTS.InformationSetMCTSPacMan;
 import pacman.Executor;
 import pacman.controllers.IndividualGhostController;
@@ -36,6 +37,7 @@ public class Main {
         controllers.put(GHOST.SUE, new examples.StarterGhostComm.Sue());*/
 
         //executor.runGameTimed(new MyPacMan_GA(), new MASController(controllers));
-        System.out.println(executor.runExperiment(new MyPacMan_GA(), new MASController(controllers), 5, "Pacman PO: " + true + " ghosts PO: " + true)[0].toString());
+        executor.runGameTimed(new MyPacMan_TDL(), new MASController(controllers));
+        //System.out.println(executor.runExperiment(new MyPacMan_TDL(), new MASController(controllers), 5, "Pacman PO: " + true + " ghosts PO: " + true)[0].toString());
     }
 }

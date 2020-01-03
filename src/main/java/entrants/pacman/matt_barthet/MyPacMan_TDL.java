@@ -5,7 +5,7 @@ import pacman.game.Constants;
 import pacman.game.Constants.MOVE;
 import pacman.game.Game;
 
-import java.util.Date;
+import java.util.*;
 
 import static entrants.pacman.matt_barthet.Agent_Utility.*;
 
@@ -16,9 +16,54 @@ public class MyPacMan_TDL extends PacmanController {
      */
     private static Game currentGame;
     private static final int COMPUTATIONAL_BUDGET = 40;
+    private static final ArrayList<int[]> stateSpace = initialiseStates();
+    private static ArrayList<QEntry> qTable;
 
     public MyPacMan_TDL() {
         ghostEdibleTime = new int[Constants.GHOST.values().length];
+        qTable = initialiseTable();
+    }
+
+    /**
+     * Initialise the set space to cover every possible state in the learning paradigm.
+     * State format: {Wall North/West/South/East}-{Direction}-{Threat North/West/South/East}-{Trapped}
+     * State Value Ranges: {0,1}-{0,1}-{0,1}-{0,1}-{0,1,2,3,4}-{0,1}-{0,1}-{0,1}-{0,1}-{0,1}{0,1}
+     */
+    private static ArrayList<int[]> initialiseStates(){
+        ArrayList<int[]> stateSpace = new ArrayList<>();
+        for(int i = 0; i < 2; i++){
+            for(int j = 0; j < 2; j++){
+                for(int k = 0; k < 2; k++){
+                    for(int l = 0; l < 2; l++){
+                        for(int m = 0; m < 4; m++){
+                            for(int n = 0; n < 2; n++){
+                                for(int o = 0; o < 2; o++){
+                                    for(int p = 0; p < 2; p++){
+                                        for(int q = 0; q < 2; q++){
+                                            for(int r = 0; r < 2; r++){
+                                                stateSpace.add(new int[]{i, j, k, l, m, n, o, p, q, r});
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return stateSpace;
+    }
+
+    private ArrayList<QEntry> initialiseTable(){
+        ArrayList<QEntry> qTable = new ArrayList<>();
+        for (int[] state : stateSpace) {
+            for (MOVE move: POSSIBLE_MOVES) {
+                if(state[0] == 1 && move == MOVE.UP)
+                qTable.add(new QEntry(state, move));
+            }
+        }
+        return qTable;
     }
 
     /**
@@ -45,20 +90,12 @@ public class MyPacMan_TDL extends PacmanController {
      * executed.
      */
     private void reinforcementLearning(){
-        initialiseStates();
         long startTime = new Date().getTime();
         while(new Date().getTime() < startTime + COMPUTATIONAL_BUDGET){
             chooseAction();
             applyAction();
-            updateValue(rewardFunction(currentGame));
+            //updateValue(rewardFunction(currentGame));
         }
-    }
-
-    /**
-     * TODO: Initialise the states in the Q-Table.
-     */
-    private void initialiseStates(){
-
     }
 
     /**
@@ -91,10 +128,19 @@ public class MyPacMan_TDL extends PacmanController {
         return -1;
     }
 
-    /**
-     * TODO: Update the Q-Value in the table according to the reward given and the Q-Learning equation.
-     */
-    private void updateValue(int value){
+    public class QEntry {
+        int [] state;
+        MOVE action;
+        int qValue;
 
+        public QEntry(int[] state, MOVE action){
+            this.state = state;
+            this.action = action;
+            qValue = 0;
+        }
+
+        private void updateValue(int value){
+            qValue = value;
+        }
     }
 }
