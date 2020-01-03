@@ -50,8 +50,7 @@ public class MyPacMan_TDL extends PacmanController {
         while(new Date().getTime() < startTime + COMPUTATIONAL_BUDGET){
             chooseAction();
             applyAction();
-            rewardFunction();
-            updateValue();
+            updateValue(rewardFunction(currentGame));
         }
     }
 
@@ -79,15 +78,23 @@ public class MyPacMan_TDL extends PacmanController {
     /**
      * TODO: Calculate the reward to be assigned to the state-action pair according to any events that occur.
      */
-    private void rewardFunction(){
-
+    private int rewardFunction(Game game){
+        if(game.wasPillEaten())
+            return 1;
+        if(game.wasPowerPillEaten())
+            return 5;
+        for (Constants.GHOST ghost : Constants.GHOST.values())
+            if(game.wasGhostEaten(ghost))
+                return 10;
+        if(game.wasPacManEaten())
+            return -10;
+        return -1;
     }
 
     /**
      * TODO: Update the Q-Value in the table according to the reward given and the Q-Learning equation.
      */
-    private void updateValue(){
+    private void updateValue(int value){
 
     }
-
 }
