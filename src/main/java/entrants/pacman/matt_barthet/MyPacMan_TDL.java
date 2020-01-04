@@ -28,6 +28,7 @@ public class MyPacMan_TDL extends PacmanController {
      * Initialise the set space to cover every possible state in the learning paradigm.
      * State format: {Wall North/West/South/East}-{Direction}-{Threat North/West/South/East}-{Trapped}
      * State Value Ranges: {0,1}-{0,1}-{0,1}-{0,1}-{0,1,2,3,4}-{0,1}-{0,1}-{0,1}-{0,1}-{0,1}{0,1}
+     * @return the ArrayList contain the state space.
      */
     private static ArrayList<int[]> initialiseStates(){
         ArrayList<int[]> stateSpace = new ArrayList<>();
@@ -55,11 +56,20 @@ public class MyPacMan_TDL extends PacmanController {
         return stateSpace;
     }
 
+    /**
+     * Initialise the Q-Table, which contains every possible state-action pair combination from the
+     * previously established state space and action space.  The table prunes out any actions which
+     * cause Ms. Pacman to make a move into a barrier.
+     * @return the generated Q-Table as an ArrayList of QEntries.
+     */
     private ArrayList<QEntry> initialiseTable(){
         ArrayList<QEntry> qTable = new ArrayList<>();
         for (int[] state : stateSpace) {
             for (MOVE move: POSSIBLE_MOVES) {
-                if(state[0] == 1 && move == MOVE.UP)
+                if(state[0] == 1 && move == MOVE.UP || state[2] == 1 && move == MOVE.DOWN)
+                    continue;
+                if(state[1] == 1 && move == MOVE.LEFT || state[3] == 1 && move == MOVE.RIGHT)
+                    continue;
                 qTable.add(new QEntry(state, move));
             }
         }
@@ -129,8 +139,8 @@ public class MyPacMan_TDL extends PacmanController {
     }
 
     public class QEntry {
-        int [] state;
-        MOVE action;
+
+        int [] state; MOVE action;
         int qValue;
 
         public QEntry(int[] state, MOVE action){
@@ -139,8 +149,10 @@ public class MyPacMan_TDL extends PacmanController {
             qValue = 0;
         }
 
-        private void updateValue(int value){
+        public void updateValue(int value){
             qValue = value;
         }
     }
+
+
 }
