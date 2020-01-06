@@ -14,10 +14,17 @@ public class MyPacMan_TDL extends PacmanController {
     /**
      * Initialises the variables for the Q-Learning algorithm.
      */
-    private static Game currentGame;
     private static final int COMPUTATIONAL_BUDGET = 40;
+    private static final float LEARNING_RATE = 0.2f;
+    private static final float DISCOUNT_FACTOR = 1f;
+    private static final float EPSILON = 0.9f;
+    private static final int MAXIMUM_STEPS = 10;
     private static final ArrayList<int[]> stateSpace = initialiseStates();
     private static ArrayList<QEntry> qTable;
+
+    private static Game currentGame;
+    private static final MOVE[] moves = new MOVE[]{MOVE.UP, MOVE.LEFT, MOVE.DOWN, MOVE.RIGHT};
+    Random randomGenerator;
 
     public MyPacMan_TDL() {
         ghostEdibleTime = new int[Constants.GHOST.values().length];
@@ -41,9 +48,7 @@ public class MyPacMan_TDL extends PacmanController {
                                 for(int o = 0; o < 2; o++){
                                     for(int p = 0; p < 2; p++){
                                         for(int q = 0; q < 2; q++){
-                                            for(int r = 0; r < 2; r++){
-                                                stateSpace.add(new int[]{i, j, k, l, m, n, o, p, q, r});
-                                            }
+                                            stateSpace.add(new int[]{i, j, k, l, m, n, o, p, q});
                                         }
                                     }
                                 }
@@ -64,95 +69,250 @@ public class MyPacMan_TDL extends PacmanController {
      */
     private ArrayList<QEntry> initialiseTable(){
         ArrayList<QEntry> qTable = new ArrayList<>();
+        int index = 0;
         for (int[] state : stateSpace) {
             for (MOVE move: POSSIBLE_MOVES) {
                 if(state[0] == 1 && move == MOVE.UP || state[2] == 1 && move == MOVE.DOWN)
                     continue;
                 if(state[1] == 1 && move == MOVE.LEFT || state[3] == 1 && move == MOVE.RIGHT)
                     continue;
-                qTable.add(new QEntry(state, move));
+                qTable.add(new QEntry(state, move, index));
+                index++;
             }
         }
         return qTable;
     }
 
     /**
-     * Ms. Pacman starts by updating her knowledge of the game state based on her current
-     * location and entities (ghosts, pills) in her LOS. She then performs the Q-Learning
-     * algorithm until she hits the computational budget.  The predictor is then updated,
-     * and the highest rewarding move is chosen as Ms. Pacman's next move.
+     * Function which determines the best move for Ms. Pacman to take through a Q-Learning
+     * algorithm. Also updates Ms. Pacman's knowledge of the game state and ghost locations.
      * @param game: the current state of the game at this tick.
      * @param timeDue: how long Ms. Pacman has to decide about her move.
      * @return the chosen move based on the results of the algorithm.
      */
     public MOVE getMove(Game game, long timeDue) {
+        randomGenerator = new Random();
         updateObservations(game);
         observeGhosts(game);
         if(game != currentGame){ currentGame = game; }
-        reinforcementLearning();
+        MOVE bestMove = reinforcementLearning();
         predictions.update();
-        return MOVE.NEUTRAL;
+        return bestMove;
     }
 
     /**
-     * Uses Q Learning to iteratively exploit and explore different actions in the state space
-     * to identify the best action at this time. This action is then chosen by Ms. Pacman and
-     * executed.
+     * While within the set time limit, execute episodes of the algorithm using the given
+     * starting state to converge on the best possible move.
+     * @return the optimal move in current game state.
      */
-    private void reinforcementLearning(){
+    private MOVE reinforcementLearning(){
         long startTime = new Date().getTime();
+        QEntry startState = getState(currentGame, currentGame.getPacmanCurrentNodeIndex());
         while(new Date().getTime() < startTime + COMPUTATIONAL_BUDGET){
-            chooseAction();
-            applyAction();
-            //updateValue(rewardFunction(currentGame));
+            Game simulation = getGameSimulation(currentGame, predictions, ghostEdibleTime);
+            learningEpisode(simulation, startState);
+        }
+        ArrayList<QEntry> possibleMoves = getSimilarEntries(startState);
+        return getBestEntry(possibleMoves).action;
+    }
+
+    private void learningEpisode(Game simulation, QEntry currentState){
+        for(int stepCount = 0; stepCount < MAXIMUM_STEPS && !simulation.wasPacManEaten(); stepCount++){
+            MOVE nextMove = chooseAction(currentState);
+            simulation.advanceGame(nextMove, getBasicGhostMoves(simulation));
+            QEntry previousState = currentState;
+            currentState = getState(simulation, simulation.getPacmanCurrentNodeIndex());
+            previousState.updateValue(rewardFunction(simulation), getBestEntry(getSimilarEntries(currentState)));
         }
     }
 
     /**
-     * TODO: Choose the next action to apply according to the greedy epsilon policy.
+     * Function to get the first qEntry corresponding to the current game state.
+     * @param game: current game being played.
+     * @param location: Ms. Pacman's location in the maze
+     * @return the first entry in the QTable containing this state.
      */
-    private void chooseAction(){
+    private QEntry getState(Game game, int location){
 
+        int[] currentState = new int[9];
+
+        for(int i = 0; i < 4; i++){
+            if(game.getNeighbour(location, moves[i]) == -1){
+                currentState[i] = 1;
+            } else {
+                currentState[i] = 0;
+            }
+        }
+
+        currentState[4] = moveToInteger(game.getPacmanLastMoveMade());
+
+        for(int i = 5; i < 9; i++){
+            currentState[i] = 0;
+        }
+
+        for(Constants.GHOST ghost: Constants.GHOST.values()){
+            int ghostLocation = game.getGhostCurrentNodeIndex(ghost);
+            if(ghostLocation != -1) {
+                MOVE direction = game.getNextMoveTowardsTarget(location, ghostLocation, Constants.DM.PATH);
+                if (direction == MOVE.UP) {
+                    currentState[4] = 1;
+                } else if (direction == MOVE.LEFT) {
+                    currentState[5] = 1;
+                } else if (direction == MOVE.DOWN) {
+                    currentState[6] = 1;
+                } else {
+                    currentState[7] = 1;
+                }
+            }
+        }
+
+        for (QEntry qEntry : qTable) {
+            if (Arrays.equals(currentState, qEntry.state)) {
+                return qEntry;
+            }
+        }
+
+        return null;
     }
 
     /**
-     * TODO: Apply the action chosen in the previous step of the algorithm to the state being evaluated.
+     * Choose the next action for Ms. Pacman to test using the epsilon-greedy policy.
+     * @param firstEntry: entry containing the state we are looking at.
+     * @return action to take in the given state for next step.
      */
-    private void applyAction(){
-
+    private MOVE chooseAction(QEntry firstEntry){
+        ArrayList<QEntry> possibleMoves = getSimilarEntries(firstEntry);
+        if(randomGenerator.nextFloat() < EPSILON){
+            //System.out.println("Choosing Best Action");
+            return getBestEntry(possibleMoves).action;
+        } else {
+            //System.out.println("Choosing Random Action");
+            return possibleMoves.get(randomGenerator.nextInt(possibleMoves.size())).action;
+        }
     }
 
     /**
-     * TODO: Calculate the reward to be assigned to the state-action pair according to any events that occur.
+     * Returns the reward to be attributed to a state-action execution according to the
+     * resulting event.
+     * @param game: game state being observed.
+     * @return float score value.
      */
-    private int rewardFunction(Game game){
-        if(game.wasPillEaten())
+    private float rewardFunction(Game game){
+        if(game.wasPillEaten()) {
             return 1;
-        if(game.wasPowerPillEaten())
+        }
+        if(game.wasPowerPillEaten()) {
             return 5;
-        for (Constants.GHOST ghost : Constants.GHOST.values())
-            if(game.wasGhostEaten(ghost))
+        }
+        for (Constants.GHOST ghost : Constants.GHOST.values()) {
+            if (game.wasGhostEaten(ghost)) {
                 return 10;
-        if(game.wasPacManEaten())
+            }
+        }
+        if(game.wasPacManEaten()) {
             return -10;
-        return -1;
+        }
+        return 0.5f;
     }
 
-    public class QEntry {
+    /**
+     * Get entries in the qTable with the same state as the given entry.
+     * @param entry: entry with the state we'd like to compare.
+     * @return all entries with the same state.
+     */
+    private ArrayList<QEntry> getSimilarEntries(QEntry entry){
+        ArrayList<QEntry> possibleMoves = new ArrayList<>();
+        for(int i = entry.qIndex;; i++){
+            if(Arrays.equals(entry.state, qTable.get(i).state)) {
+                possibleMoves.add(qTable.get(i));
+            } else {
+                break;
+            }
+        }
+        return possibleMoves;
+    }
+
+    /**
+     * Get the entry with the best Q-Value from the list of entries given.
+     * @param entries: list of entries to be analysed.
+     * @return entry with the best Q-Value.
+     */
+    private QEntry getBestEntry(ArrayList<QEntry> entries){
+        float max = Integer.MIN_VALUE;
+        QEntry maxEntry = null;
+        for (QEntry entry: entries){
+            if(entry.qValue > max) {
+                maxEntry = entry;
+                max = entry.qValue;
+            }
+        }
+        assert maxEntry != null;
+        return maxEntry;
+    }
+
+    /**
+     * Converts a MOVE variable to integer based on the state representation used.
+     * In this case {N/W/S/E} = {0/1/2/3}
+     * @param move: move that should be converted to an integer.
+     * @return integer value corresponding to that move.
+     */
+    private int moveToInteger(MOVE move){
+        if(move == MOVE.UP)
+            return 0;
+        if(move == MOVE.LEFT)
+            return 1;
+        if(move == MOVE.DOWN)
+            return 2;
+        if(move == MOVE.RIGHT)
+            return 3;
+        return 0;
+    }
+
+    private String getStateMeaning(int[] state){
+        String output = "Wall Above: ";
+        if(state[0] == 1)
+            output += "Yes.\t";
+        else
+            output += "No.\t";
+        output += "Wall Left: ";
+        if(state[1] == 1)
+            output += "Yes.\t";
+        else
+            output += "No.\t";
+        output += "Wall Below: ";
+        if(state[2] == 1)
+            output += "Yes.\t";
+        else
+            output += "No.\t";
+        output += "Wall Right: ";
+        if(state[3] == 1)
+            output += "Yes.\n";
+        else
+            output += "No.\n";
+        return output;
+    }
+
+    public static class QEntry {
 
         int [] state; MOVE action;
-        int qValue;
+        int qIndex; float qValue;
 
-        public QEntry(int[] state, MOVE action){
+        public QEntry(int[] state, MOVE action, int index){
             this.state = state;
             this.action = action;
             qValue = 0;
+            qIndex = index;
         }
 
-        public void updateValue(int value){
-            qValue = value;
+        /**
+         * Updates the Q-Value of this state-action entry in the Q-Table using the formula:
+         * Q(S,A) = Q(S, A) + Alpha * [R + Gamma * Q(S', A') - Q(S,A)]
+         * @param reward: reward value observed for executing this entry.
+         * @param futureAction: Q-Value of the next optimised action being taken.
+         */
+        public void updateValue(float reward, QEntry futureAction){
+            qValue += LEARNING_RATE * (reward + DISCOUNT_FACTOR * futureAction.qValue - qValue);
         }
+
     }
-
-
 }
