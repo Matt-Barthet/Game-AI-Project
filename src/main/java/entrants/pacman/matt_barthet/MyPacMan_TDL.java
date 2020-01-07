@@ -16,9 +16,9 @@ public class MyPacMan_TDL extends PacmanController {
      */
     private static final int COMPUTATIONAL_BUDGET = 40;
     private static final float LEARNING_RATE = 0.2f;
-    private static final float DISCOUNT_FACTOR = 1f;
+    private static final float DISCOUNT_FACTOR = 0.9f;
     private static final float EPSILON = 0.9f;
-    private static final int MAXIMUM_STEPS = 10;
+    private static final int MAXIMUM_STEPS = 100;
     private static final ArrayList<int[]> stateSpace = initialiseStates();
     private static ArrayList<QEntry> qTable;
 
@@ -39,16 +39,18 @@ public class MyPacMan_TDL extends PacmanController {
      */
     private static ArrayList<int[]> initialiseStates(){
         ArrayList<int[]> stateSpace = new ArrayList<>();
-        for(int i = 0; i < 2; i++){
-            for(int j = 0; j < 2; j++){
+        for(int i = 0; i < 4; i++){
+            for(int j = 0; j < 5; j++){
                 for(int k = 0; k < 2; k++){
                     for(int l = 0; l < 2; l++){
-                        for(int m = 0; m < 4; m++){
+                        for(int m = 0; m < 2; m++){
                             for(int n = 0; n < 2; n++){
                                 for(int o = 0; o < 2; o++){
                                     for(int p = 0; p < 2; p++){
                                         for(int q = 0; q < 2; q++){
-                                            stateSpace.add(new int[]{i, j, k, l, m, n, o, p, q});
+                                            for(int r = 0; r < 2; r++){
+                                                stateSpace.add(new int[]{i, j, k, l, m, n, o, p, q, r});
+                                            }
                                         }
                                     }
                                 }
@@ -71,7 +73,7 @@ public class MyPacMan_TDL extends PacmanController {
         ArrayList<QEntry> qTable = new ArrayList<>();
         int index = 0;
         for (int[] state : stateSpace) {
-            for (MOVE move: POSSIBLE_MOVES) {
+            for (MOVE move: moves) {
                 if(state[0] == 1 && move == MOVE.UP || state[2] == 1 && move == MOVE.DOWN)
                     continue;
                 if(state[1] == 1 && move == MOVE.LEFT || state[3] == 1 && move == MOVE.RIGHT)
@@ -108,21 +110,29 @@ public class MyPacMan_TDL extends PacmanController {
     private MOVE reinforcementLearning(){
         long startTime = new Date().getTime();
         QEntry startState = getState(currentGame, currentGame.getPacmanCurrentNodeIndex());
+        int counter =0;
         while(new Date().getTime() < startTime + COMPUTATIONAL_BUDGET){
             Game simulation = getGameSimulation(currentGame, predictions, ghostEdibleTime);
             learningEpisode(simulation, startState);
+            counter++;
         }
+        System.out.println(counter);
+        assert startState != null;
         ArrayList<QEntry> possibleMoves = getSimilarEntries(startState);
         return getBestEntry(possibleMoves).action;
     }
 
-    private void learningEpisode(Game simulation, QEntry currentState){
+    private void learningEpisode(Game simulation, QEntry startingState){
+        MOVE nextMove;
+        QEntry currentState = startingState;
         for(int stepCount = 0; stepCount < MAXIMUM_STEPS && !simulation.wasPacManEaten(); stepCount++){
-            MOVE nextMove = chooseAction(currentState);
+            nextMove = chooseAction(currentState);
+            MOVE lastMove = simulation.getPacmanLastMoveMade();
             simulation.advanceGame(nextMove, getBasicGhostMoves(simulation));
             QEntry previousState = currentState;
             currentState = getState(simulation, simulation.getPacmanCurrentNodeIndex());
-            previousState.updateValue(rewardFunction(simulation), getBestEntry(getSimilarEntries(currentState)));
+            assert currentState != null;
+            previousState.updateValue(rewardFunction(simulation, previousState, lastMove), getBestEntry(getSimilarEntries(currentState)));
         }
     }
 
@@ -134,20 +144,25 @@ public class MyPacMan_TDL extends PacmanController {
      */
     private QEntry getState(Game game, int location){
 
-        int[] currentState = new int[9];
+        int[] currentState = new int[10];
 
-        for(int i = 0; i < 4; i++){
-            if(game.getNeighbour(location, moves[i]) == -1){
+        currentState[0] = moveToInteger(game.getPacmanLastMoveMade());
+
+        int[] pills = game.getActivePillsIndices();
+        if(pills.length != 0) {
+            int nearestPill = game.getClosestNodeIndexFromNodeIndex(location, pills, Constants.DM.PATH);
+            MOVE pillMove = game.getNextMoveTowardsTarget(location, nearestPill, Constants.DM.PATH);
+            currentState[1] = moveToInteger(pillMove);
+        } else {
+            currentState[1] = 4;
+        }
+
+        for(int i = 2; i < 6; i++){
+            if(game.getNeighbour(location, moves[i-2]) == -1){
                 currentState[i] = 1;
             } else {
                 currentState[i] = 0;
             }
-        }
-
-        currentState[4] = moveToInteger(game.getPacmanLastMoveMade());
-
-        for(int i = 5; i < 9; i++){
-            currentState[i] = 0;
         }
 
         for(Constants.GHOST ghost: Constants.GHOST.values()){
@@ -155,13 +170,13 @@ public class MyPacMan_TDL extends PacmanController {
             if(ghostLocation != -1) {
                 MOVE direction = game.getNextMoveTowardsTarget(location, ghostLocation, Constants.DM.PATH);
                 if (direction == MOVE.UP) {
-                    currentState[4] = 1;
-                } else if (direction == MOVE.LEFT) {
-                    currentState[5] = 1;
-                } else if (direction == MOVE.DOWN) {
                     currentState[6] = 1;
-                } else {
+                } else if (direction == MOVE.LEFT) {
                     currentState[7] = 1;
+                } else if (direction == MOVE.DOWN) {
+                    currentState[8] = 1;
+                } else if (direction == MOVE.RIGHT){
+                    currentState[9] = 1;
                 }
             }
         }
@@ -183,10 +198,13 @@ public class MyPacMan_TDL extends PacmanController {
     private MOVE chooseAction(QEntry firstEntry){
         ArrayList<QEntry> possibleMoves = getSimilarEntries(firstEntry);
         if(randomGenerator.nextFloat() < EPSILON){
-            //System.out.println("Choosing Best Action");
-            return getBestEntry(possibleMoves).action;
+            QEntry bestEntry = getBestEntry(possibleMoves);
+            if(bestEntry.qValue == 0 && bestEntry.action == MOVE.UP) {
+                //System.out.println("No entries have been evaluated at this state. Choosing random.");
+                return possibleMoves.get(randomGenerator.nextInt(possibleMoves.size())).action;
+            }
+            return bestEntry.action;
         } else {
-            //System.out.println("Choosing Random Action");
             return possibleMoves.get(randomGenerator.nextInt(possibleMoves.size())).action;
         }
     }
@@ -197,22 +215,36 @@ public class MyPacMan_TDL extends PacmanController {
      * @param game: game state being observed.
      * @return float score value.
      */
-    private float rewardFunction(Game game){
-        if(game.wasPillEaten()) {
-            return 1;
+    private float rewardFunction(Game game, QEntry state, MOVE lastMove){
+        float score = 0;
+
+        if(game.wasPacManEaten()) {
+            //System.out.println("Ms. Pacman has been eaten!");
+            return -100;
         }
-        if(game.wasPowerPillEaten()) {
-            return 5;
+        if(moveToInteger(state.action) == state.state[2]){
+            //System.out.println("Ms. Pacman is moving toward the nearest pill!");
+            score += 5;
+        }
+        if(game.wasPillEaten()) {
+            //System.out.println("Ms. Pacman has eaten a pill!");
+            score += 10;
+        } else if(game.wasPowerPillEaten()) {
+            //System.out.println("Ms. Pacman has eaten a power pill!");
+            score += 50;
         }
         for (Constants.GHOST ghost : Constants.GHOST.values()) {
             if (game.wasGhostEaten(ghost)) {
-                return 10;
+                //System.out.println("Ms. Pacman has eaten a ghost!");
+                score += 10;
             }
         }
-        if(game.wasPacManEaten()) {
-            return -10;
+
+        if(state.state[moveToInteger(lastMove)+2] == 1) {
+            //System.out.println("Ms. Pacman has attempted to move into a barrier!");
+            score = -50;
         }
-        return 0.5f;
+        return score;
     }
 
     /**
@@ -269,23 +301,40 @@ public class MyPacMan_TDL extends PacmanController {
     }
 
     private String getStateMeaning(int[] state){
-        String output = "Wall Above: ";
-        if(state[0] == 1)
-            output += "Yes.\t";
-        else
-            output += "No.\t";
-        output += "Wall Left: ";
-        if(state[1] == 1)
-            output += "Yes.\t";
-        else
-            output += "No.\t";
-        output += "Wall Below: ";
+
+        String output = "Direction: ";
+        switch(state[0]){
+            case 0: output += "UP\t"; break;
+            case 1: output += "LEFT\t"; break;
+            case 2: output += "DOWN\t"; break;
+            case 3: output += "RIGHT\t"; break;
+        }
+
+        output += "PILL: ";
+        switch(state[1]){
+            case 0: output += "UP\n"; break;
+            case 1: output += "LEFT\n"; break;
+            case 2: output += "DOWN\n"; break;
+            case 3: output += "RIGHT\n"; break;
+        }
+
+        output += "Wall Above: ";
         if(state[2] == 1)
             output += "Yes.\t";
         else
             output += "No.\t";
-        output += "Wall Right: ";
+        output += "Wall Left: ";
         if(state[3] == 1)
+            output += "Yes.\t";
+        else
+            output += "No.\t";
+        output += "Wall Below: ";
+        if(state[4] == 1)
+            output += "Yes.\t";
+        else
+            output += "No.\t";
+        output += "Wall Right: ";
+        if(state[5] == 1)
             output += "Yes.\n";
         else
             output += "No.\n";
