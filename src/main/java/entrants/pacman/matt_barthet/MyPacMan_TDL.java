@@ -18,7 +18,7 @@ public class MyPacMan_TDL extends PacmanController {
     private static final float LEARNING_RATE = 0.2f;
     private static final float DISCOUNT_FACTOR = 0.9f;
     private static final float EPSILON = 0.9f;
-    private static final int MAXIMUM_STEPS = 100;
+    private static final int MAXIMUM_STEPS = 10;
     private static final ArrayList<int[]> stateSpace = initialiseStates();
     private static ArrayList<QEntry> qTable;
 
@@ -40,7 +40,7 @@ public class MyPacMan_TDL extends PacmanController {
     private static ArrayList<int[]> initialiseStates(){
         ArrayList<int[]> stateSpace = new ArrayList<>();
         for(int i = 0; i < 4; i++){
-            for(int j = 0; j < 5; j++){
+            for(int j = 0; j < 2; j++){
                 for(int k = 0; k < 2; k++){
                     for(int l = 0; l < 2; l++){
                         for(int m = 0; m < 2; m++){
@@ -48,7 +48,7 @@ public class MyPacMan_TDL extends PacmanController {
                                 for(int o = 0; o < 2; o++){
                                     for(int p = 0; p < 2; p++){
                                         for(int q = 0; q < 2; q++){
-                                            for(int r = 0; r < 2; r++){
+                                            for(int r = 0; r < 4; r++){
                                                 stateSpace.add(new int[]{i, j, k, l, m, n, o, p, q, r});
                                             }
                                         }
@@ -74,9 +74,7 @@ public class MyPacMan_TDL extends PacmanController {
         int index = 0;
         for (int[] state : stateSpace) {
             for (MOVE move: moves) {
-                if(state[0] == 1 && move == MOVE.UP || state[2] == 1 && move == MOVE.DOWN)
-                    continue;
-                if(state[1] == 1 && move == MOVE.LEFT || state[3] == 1 && move == MOVE.RIGHT)
+                if(state[moveToInteger(move) + 1] ==1)
                     continue;
                 qTable.add(new QEntry(state, move, index));
                 index++;
@@ -110,29 +108,49 @@ public class MyPacMan_TDL extends PacmanController {
     private MOVE reinforcementLearning(){
         long startTime = new Date().getTime();
         QEntry startState = getState(currentGame, currentGame.getPacmanCurrentNodeIndex());
-        int counter =0;
         while(new Date().getTime() < startTime + COMPUTATIONAL_BUDGET){
             Game simulation = getGameSimulation(currentGame, predictions, ghostEdibleTime);
             learningEpisode(simulation, startState);
-            counter++;
         }
-        System.out.println(counter);
         assert startState != null;
         ArrayList<QEntry> possibleMoves = getSimilarEntries(startState);
         return getBestEntry(possibleMoves).action;
     }
 
     private void learningEpisode(Game simulation, QEntry startingState){
-        MOVE nextMove;
         QEntry currentState = startingState;
+
         for(int stepCount = 0; stepCount < MAXIMUM_STEPS && !simulation.wasPacManEaten(); stepCount++){
-            nextMove = chooseAction(currentState);
-            MOVE lastMove = simulation.getPacmanLastMoveMade();
-            simulation.advanceGame(nextMove, getBasicGhostMoves(simulation));
-            QEntry previousState = currentState;
-            currentState = getState(simulation, simulation.getPacmanCurrentNodeIndex());
-            assert currentState != null;
-            previousState.updateValue(rewardFunction(simulation, previousState, lastMove), getBestEntry(getSimilarEntries(currentState)));
+
+            //Choose the next move to make from this state and apply it.
+            currentState = chooseAction(currentState);
+            float reward = 0;
+
+            while(true){
+
+                //Advance another step in the simulation based on the next micro action and ghost actions
+                simulation.advanceGame(currentState.action, getBasicGhostMoves(simulation));
+                reward += rewardFunction(simulation, currentState);
+
+                //If the current micro action leads Ms.Pacman to a junction or barrier, skip to the next action
+                if(simulation.isJunction(simulation.getPacmanCurrentNodeIndex()))
+                    break;
+                if(simulation.getNeighbour(simulation.getPacmanCurrentNodeIndex(), currentState.action) == -1)
+                    break;
+                if(simulation.wasPacManEaten())
+                    break;
+
+            }
+
+            //Find the first entry in the table with the resulting state and ensure it isn't a null pointer.
+            QEntry nextState = getState(simulation, simulation.getPacmanCurrentNodeIndex()); assert nextState != null;
+
+            //Update the Q-Value with the reward and best value of the next state.
+            currentState.updateValue(reward, getBestEntry(getSimilarEntries(nextState)));
+
+            //Set the current state to the newly derived state.
+            currentState = nextState;
+
         }
     }
 
@@ -148,45 +166,41 @@ public class MyPacMan_TDL extends PacmanController {
 
         currentState[0] = moveToInteger(game.getPacmanLastMoveMade());
 
-        int[] pills = game.getActivePillsIndices();
-        if(pills.length != 0) {
-            int nearestPill = game.getClosestNodeIndexFromNodeIndex(location, pills, Constants.DM.PATH);
-            MOVE pillMove = game.getNextMoveTowardsTarget(location, nearestPill, Constants.DM.PATH);
-            currentState[1] = moveToInteger(pillMove);
-        } else {
-            currentState[1] = 4;
-        }
-
-        for(int i = 2; i < 6; i++){
-            if(game.getNeighbour(location, moves[i-2]) == -1){
+        for(int i = 1; i < 5; i++){
+            if(game.getNeighbour(location, moves[i-1]) == -1){
                 currentState[i] = 1;
             } else {
                 currentState[i] = 0;
             }
         }
 
+        //Loop through every ghost, if the ghost is visible identify the direction and adjust the state.
         for(Constants.GHOST ghost: Constants.GHOST.values()){
             int ghostLocation = game.getGhostCurrentNodeIndex(ghost);
             if(ghostLocation != -1) {
                 MOVE direction = game.getNextMoveTowardsTarget(location, ghostLocation, Constants.DM.PATH);
-                if (direction == MOVE.UP) {
-                    currentState[6] = 1;
-                } else if (direction == MOVE.LEFT) {
-                    currentState[7] = 1;
-                } else if (direction == MOVE.DOWN) {
-                    currentState[8] = 1;
-                } else if (direction == MOVE.RIGHT){
-                    currentState[9] = 1;
+                if(game.getGhostEdibleTime(ghost) > 0) {
+                    currentState[9] = moveToInteger(direction);
+                } else {
+                    switch (moveToInteger(direction)) {
+                        case 0: currentState[5] = 1; break;
+                        case 1: currentState[6] = 1; break;
+                        case 2: currentState[7] = 1; break;
+                        case 3: currentState[8] = 1; break;
+                    }
                 }
             }
         }
 
+        //Go through the Q-Table and extract the first entry with the same state.
         for (QEntry qEntry : qTable) {
             if (Arrays.equals(currentState, qEntry.state)) {
                 return qEntry;
             }
         }
 
+        //If no entry has been found print error and return a null pointer.
+        System.err.println("ERROR: No entry in the Q-Table corresponds to current state!");
         return null;
     }
 
@@ -195,17 +209,12 @@ public class MyPacMan_TDL extends PacmanController {
      * @param firstEntry: entry containing the state we are looking at.
      * @return action to take in the given state for next step.
      */
-    private MOVE chooseAction(QEntry firstEntry){
+    private QEntry chooseAction(QEntry firstEntry){
         ArrayList<QEntry> possibleMoves = getSimilarEntries(firstEntry);
         if(randomGenerator.nextFloat() < EPSILON){
-            QEntry bestEntry = getBestEntry(possibleMoves);
-            if(bestEntry.qValue == 0 && bestEntry.action == MOVE.UP) {
-                //System.out.println("No entries have been evaluated at this state. Choosing random.");
-                return possibleMoves.get(randomGenerator.nextInt(possibleMoves.size())).action;
-            }
-            return bestEntry.action;
+            return getBestEntry(possibleMoves);
         } else {
-            return possibleMoves.get(randomGenerator.nextInt(possibleMoves.size())).action;
+            return possibleMoves.get(randomGenerator.nextInt(possibleMoves.size()));
         }
     }
 
@@ -215,34 +224,20 @@ public class MyPacMan_TDL extends PacmanController {
      * @param game: game state being observed.
      * @return float score value.
      */
-    private float rewardFunction(Game game, QEntry state, MOVE lastMove){
+    private float rewardFunction(Game game, QEntry state){
         float score = 0;
-
         if(game.wasPacManEaten()) {
-            //System.out.println("Ms. Pacman has been eaten!");
             return -100;
         }
-        if(moveToInteger(state.action) == state.state[2]){
-            //System.out.println("Ms. Pacman is moving toward the nearest pill!");
-            score += 5;
-        }
         if(game.wasPillEaten()) {
-            //System.out.println("Ms. Pacman has eaten a pill!");
             score += 10;
         } else if(game.wasPowerPillEaten()) {
-            //System.out.println("Ms. Pacman has eaten a power pill!");
             score += 50;
         }
         for (Constants.GHOST ghost : Constants.GHOST.values()) {
             if (game.wasGhostEaten(ghost)) {
-                //System.out.println("Ms. Pacman has eaten a ghost!");
-                score += 10;
+                score += game.getGhostCurrentEdibleScore();
             }
-        }
-
-        if(state.state[moveToInteger(lastMove)+2] == 1) {
-            //System.out.println("Ms. Pacman has attempted to move into a barrier!");
-            score = -50;
         }
         return score;
     }
@@ -300,6 +295,12 @@ public class MyPacMan_TDL extends PacmanController {
         return 0;
     }
 
+    /**
+     * Converter an integer array state representation into a readable text based
+     * representation for debugging purposes.
+     * @param state: integer array containing state being converted.
+     * @return string containing state description.
+     */
     private String getStateMeaning(int[] state){
 
         String output = "Direction: ";
@@ -316,6 +317,7 @@ public class MyPacMan_TDL extends PacmanController {
             case 1: output += "LEFT\n"; break;
             case 2: output += "DOWN\n"; break;
             case 3: output += "RIGHT\n"; break;
+            case 4: output += "UNKNOWN\n"; break;
         }
 
         output += "Wall Above: ";
@@ -338,9 +340,33 @@ public class MyPacMan_TDL extends PacmanController {
             output += "Yes.\n";
         else
             output += "No.\n";
+        output += "Ghost Above: ";
+        if(state[6] == 1)
+            output += "Yes.\t";
+        else
+            output += "No.\t";
+        output += "Ghost Left: ";
+        if(state[7] == 1)
+            output += "Yes.\t";
+        else
+            output += "No.\t";
+        output += "Ghost Below: ";
+        if(state[8] == 1)
+            output += "Yes.\t";
+        else
+            output += "No.\t";
+        output += "Ghost Right: ";
+        if(state[9] == 1)
+            output += "Yes.\n";
+        else
+            output += "No.\n";
         return output;
     }
 
+    /**
+     * Internal class to be used to represent entries in the Q-Table. This improves
+     * the organisation of the algorithm.
+     */
     public static class QEntry {
 
         int [] state; MOVE action;

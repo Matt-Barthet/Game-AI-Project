@@ -37,7 +37,8 @@ public class Main {
         controllers.put(GHOST.SUE, new examples.StarterGhostComm.Sue());*/
 
         //executor.runGameTimed(new MyPacMan_GA(), new MASController(controllers));
-        executor.runGame(new MyPacMan_TDL(), new MASController(controllers), 30);
+        executor.runGameTimed(new MyPacMan_TDL(), new MASController(controllers));
+        //System.out.println(executor.runExperiment(new MyPacMan_GA(), new MASController(controllers), 5, "Pacman PO: " + true + " ghosts PO: " + true)[0].toString());
         //System.out.println(executor.runExperiment(new MyPacMan_TDL(), new MASController(controllers), 5, "Pacman PO: " + true + " ghosts PO: " + true)[0].toString());
     }
 }
