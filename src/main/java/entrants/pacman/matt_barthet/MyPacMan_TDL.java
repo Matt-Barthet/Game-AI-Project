@@ -1,10 +1,14 @@
 package entrants.pacman.matt_barthet;
 
+import pacman.controllers.MASController;
 import pacman.controllers.PacmanController;
 import pacman.game.Constants;
 import pacman.game.Constants.MOVE;
 import pacman.game.Game;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.*;
 
 import static entrants.pacman.matt_barthet.Agent_Utility.*;
@@ -15,16 +19,16 @@ public class MyPacMan_TDL extends PacmanController {
      * Initialises the variables for the Q-Learning algorithm.
      */
     private static final int COMPUTATIONAL_BUDGET = 40;
-    private static final float LEARNING_RATE = 0.2f;
+    public static float LEARNING_RATE = 0.2f;
     private static final float DISCOUNT_FACTOR = 0.9f;
     private static final float EPSILON = 0.9f;
-    private static final int MAXIMUM_STEPS = 10;
+    public static int MAXIMUM_STEPS = 10;
     private static final ArrayList<int[]> stateSpace = initialiseStates();
     private static ArrayList<QEntry> qTable;
-
     private static Game currentGame;
     private static final MOVE[] moves = new MOVE[]{MOVE.UP, MOVE.LEFT, MOVE.DOWN, MOVE.RIGHT};
     Random randomGenerator;
+    private float cumalativeScore = 0;
 
     public MyPacMan_TDL() {
         ghostEdibleTime = new int[Constants.GHOST.values().length];
@@ -95,6 +99,7 @@ public class MyPacMan_TDL extends PacmanController {
         updateObservations(game);
         observeGhosts(game);
         if(game != currentGame){ currentGame = game; }
+        if(game.gameOver()) return null;
         MOVE bestMove = reinforcementLearning();
         predictions.update();
         return bestMove;
@@ -108,18 +113,39 @@ public class MyPacMan_TDL extends PacmanController {
     private MOVE reinforcementLearning(){
         long startTime = new Date().getTime();
         QEntry startState = getState(currentGame, currentGame.getPacmanCurrentNodeIndex());
+
+        int counter = 0;
+
         while(new Date().getTime() < startTime + COMPUTATIONAL_BUDGET){
             Game simulation = getGameSimulation(currentGame, predictions, ghostEdibleTime);
             learningEpisode(simulation, startState);
+            counter++;
         }
         assert startState != null;
-        ArrayList<QEntry> possibleMoves = getSimilarEntries(startState);
-        return getBestEntry(possibleMoves).action;
+        QEntry bestMove = getBestEntry(getSimilarEntries(startState));
+
+        try {
+            FileWriter fr = new FileWriter( new File("Cum_Reward.txt"), true);
+            fr.write(cumalativeScore/counter + "\n");
+            fr.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return bestMove.action;
     }
 
+    /**
+     * An learning episode refers to a string of moves Ms. Pacman tests from her current
+     * in game position until the terminal condition is reached.  This is either hitting
+     * the junction-step limit or if she's eaten by a ghost.
+     * @param simulation: copy of the game to be used to simulate moves.
+     * @param startingState: the current state of Ms. Pacman in the "real" game.
+     */
     private void learningEpisode(Game simulation, QEntry startingState){
         QEntry currentState = startingState;
 
+        //cumalativeScore = 0;
         for(int stepCount = 0; stepCount < MAXIMUM_STEPS && !simulation.wasPacManEaten(); stepCount++){
 
             //Choose the next move to make from this state and apply it.
@@ -130,7 +156,7 @@ public class MyPacMan_TDL extends PacmanController {
 
                 //Advance another step in the simulation based on the next micro action and ghost actions
                 simulation.advanceGame(currentState.action, getBasicGhostMoves(simulation));
-                reward += rewardFunction(simulation, currentState);
+                reward += rewardFunction(simulation);
 
                 //If the current micro action leads Ms.Pacman to a junction or barrier, skip to the next action
                 if(simulation.isJunction(simulation.getPacmanCurrentNodeIndex()))
@@ -150,7 +176,7 @@ public class MyPacMan_TDL extends PacmanController {
 
             //Set the current state to the newly derived state.
             currentState = nextState;
-
+            cumalativeScore += reward;
         }
     }
 
@@ -224,7 +250,7 @@ public class MyPacMan_TDL extends PacmanController {
      * @param game: game state being observed.
      * @return float score value.
      */
-    private float rewardFunction(Game game, QEntry state){
+    private float rewardFunction(Game game){
         float score = 0;
         if(game.wasPacManEaten()) {
             return -100;

@@ -4,9 +4,14 @@ import examples.StarterISMCTS.InformationSetMCTSPacMan;
 import pacman.Executor;
 import pacman.controllers.IndividualGhostController;
 import pacman.controllers.MASController;
+import pacman.controllers.examples.StarterPacMan;
 import pacman.game.Constants.*;
 import pacman.entries.pacman.*;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.Date;
 import java.util.EnumMap;
 
 /**
@@ -15,7 +20,7 @@ import java.util.EnumMap;
 public class Main {
 
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
 
         Executor executor = new Executor.Builder()
                 .setVisual(true)
@@ -26,19 +31,24 @@ public class Main {
                 .build();
 
         EnumMap<GHOST, IndividualGhostController> controllers = new EnumMap<>(GHOST.class);
+        EnumMap<GHOST, IndividualGhostController> comms_controllers = new EnumMap<>(GHOST.class);
+
         controllers.put(GHOST.INKY, new examples.StarterGhost.Inky());
         controllers.put(GHOST.BLINKY, new examples.StarterGhost.Blinky());
         controllers.put(GHOST.PINKY, new examples.StarterGhost.Pinky());
         controllers.put(GHOST.SUE, new examples.StarterGhost.Sue());
 
-        /*controllers.put(GHOST.INKY, new examples.StarterGhostComm.Inky());
-        controllers.put(GHOST.BLINKY, new examples.StarterGhostComm.Blinky());
-        controllers.put(GHOST.PINKY, new examples.StarterGhostComm.Pinky());
-        controllers.put(GHOST.SUE, new examples.StarterGhostComm.Sue());*/
+        comms_controllers.put(GHOST.INKY, new examples.StarterGhostComm.Inky());
+        comms_controllers.put(GHOST.BLINKY, new examples.StarterGhostComm.Blinky());
+        comms_controllers.put(GHOST.PINKY, new examples.StarterGhostComm.Pinky());
+        comms_controllers.put(GHOST.SUE, new examples.StarterGhostComm.Sue());
 
-        //executor.runGameTimed(new MyPacMan_GA(), new MASController(controllers));
-        executor.runGameTimed(new MyPacMan_TDL(), new MASController(controllers));
-        //System.out.println(executor.runExperiment(new MyPacMan_GA(), new MASController(controllers), 5, "Pacman PO: " + true + " ghosts PO: " + true)[0].toString());
-        //System.out.println(executor.runExperiment(new MyPacMan_TDL(), new MASController(controllers), 5, "Pacman PO: " + true + " ghosts PO: " + true)[0].toString());
+        executor.runGame(new MyPacMan_TDL(), new MASController(controllers), 0);
+        executor.runGame(new MyPacMan_GA(), new MASController(controllers), 0);
+
+        /*String result = executor.runExperiment(new MyPacMan_GA(), new MASController(controllers), 10, "Pacman PO: " + true + " ghosts PO: " + true)[0].toString();
+        System.out.println(result);
+        result = executor.runExperiment(new MyPacMan_TDL(), new MASController(controllers), 10, "Pacman PO: " + true + " ghosts PO: " + true)[0].toString();
+        System.out.println(result);*/
     }
 }

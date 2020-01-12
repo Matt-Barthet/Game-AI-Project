@@ -1,0 +1,12 @@
+TDL Controller vs Starter Ghosts, Step_Limit: 5, Learning Rate: 0.1
+TDL Controller vs Comms Ghosts, Step_Limit: 5, Learning Rate: 0.1
+Stats{Desc=Pacman PO: true ghosts PO: true, average=4575.0, sum=45750.0, sumsq=3.367083E8, sd=3762.417219465876, n=10, min=1660.0, max=13340.0, stdErr=1189.780792134977, ms=893038}
+TDL Controller vs Starter Ghosts, Step_Limit: 10, Learning Rate: 0.1
+TDL Controller vs Comms Ghosts, Step_Limit: 10, Learning Rate: 0.1
+Stats{Desc=Pacman PO: true ghosts PO: true, average=5271.0, sum=52710.0, sumsq=3.323839E8, sd=2461.9208850904297, n=10, min=1530.0, max=8360.0, stdErr=778.5277416023429, ms=1247047}
+TDL Controller vs Starter Ghosts, Step_Limit: 5, Learning Rate: 0.2
+TDL Controller vs Comms Ghosts, Step_Limit: 5, Learning Rate: 0.2
+Stats{Desc=Pacman PO: true ghosts PO: true, average=3651.0, sum=36510.0, sumsq=1.736339E8, sd=2117.018081064863, n=10, min=720.0, max=6580.0, stdErr=669.4598983923947, ms=849467}
+TDL Controller vs Starter Ghosts, Step_Limit: 10, Learning Rate: 0.2
+TDL Controller vs Comms Ghosts, Step_Limit: 10, Learning Rate: 0.2
+Stats{Desc=Pacman PO: true ghosts PO: true, average=5137.0, sum=51370.0, sumsq=3.088689E8, sd=2235.6010874532653, n=10, min=2390.0, max=10100.0, stdErr=706.9591375901596, ms=1035812}

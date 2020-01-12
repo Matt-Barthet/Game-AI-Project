@@ -26,7 +26,7 @@ public class MyPacMan_GA extends PacmanController {
     private static ArrayList<Gene> mPopulation;
     private static ArrayList<Gene> elitePopulation;
     private static Gene chosenIndividual;
-    private final static float alphaWeight = 0.7f, betaWeight = 0.3f;
+    private final static float alphaWeight = 1f, betaWeight = 0f;
     private int moveCounter = 0, generationCount = 0;
     private boolean moveCalculated = false;
     private Constants.GHOST edibleGhost;
@@ -40,6 +40,19 @@ public class MyPacMan_GA extends PacmanController {
         mPopulation = new ArrayList<>();
         elitePopulation = new ArrayList<>();
         ghostEdibleTime = new int[Constants.GHOST.values().length];
+
+        try {
+            fr = new FileWriter(file, true);
+            fr.write("Ms. Pacman Rolling Horizon Agent Test Run.\n");
+            fr.write("Chromosome Size: " + CHROMOSOME_SIZE + "\n");
+            fr.write("Population Size: " + POPULATION_SIZE + "\n");
+            fr.write("Computational Budget: " + COMPUTATIONAL_BUDGET + "\n");
+            fr.write("Mutation Rate: " + MUTATION_RATE + "\n");
+            fr.write("\n");
+            fr.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     /**
@@ -69,8 +82,8 @@ public class MyPacMan_GA extends PacmanController {
                     }
                 }
             }
-            if(chosenIndividual.getFitness() == (alphaWeight * normalize(0, 500) + betaWeight * normalize(0, game.getGhostCurrentEdibleScore() * 4))){
-                moveCounter = CHROMOSOME_SIZE;
+            if(chosenIndividual.getFitness() == (alphaWeight * normalize(0, 500))){
+                //moveCounter = CHROMOSOME_SIZE;
             }
         }
 
@@ -154,6 +167,8 @@ public class MyPacMan_GA extends PacmanController {
      */
     private void geneticAlgorithm(Game game) throws IOException {
         long start = new Date().getTime();
+        fr.write("Generation Evolution for Next Move: \n");
+        fr.write("Generation\tAverage Fitness\t\tStandard Deviation\n");
         while(new Date().getTime() < start + COMPUTATIONAL_BUDGET){
             evaluateGeneration(game);
             printEvaluation(generationCount++);
@@ -195,7 +210,6 @@ public class MyPacMan_GA extends PacmanController {
      * @return the fitness of the chromosome
      */
     private float evaluateIndividual(Game simulation, Gene individual, int startingPoint){
-        float distanceFitness = 0;
         float scoreFitness = -simulation.getScore();
 
         for(int moveID = startingPoint; moveID <= CHROMOSOME_SIZE; moveID++){
@@ -217,11 +231,6 @@ public class MyPacMan_GA extends PacmanController {
                 if(simulation.getNeighbour(simulation.getPacmanCurrentNodeIndex(), nextMove) == -1)
                     break;
 
-                for(Constants.GHOST ghost: Constants.GHOST.values()){
-                    if(simulation.wasGhostEaten(ghost)){
-                        distanceFitness += simulation.getGhostCurrentEdibleScore();
-                    }
-                }
             }
         }
 
@@ -231,7 +240,7 @@ public class MyPacMan_GA extends PacmanController {
          */
         scoreFitness += simulation.getScore();
 
-        return alphaWeight * normalize(scoreFitness, 500) + betaWeight * normalize(distanceFitness, simulation.getGhostCurrentEdibleScore() * 4);
+        return alphaWeight * normalize(scoreFitness, 500);
     }
 
     /**
@@ -311,7 +320,7 @@ public class MyPacMan_GA extends PacmanController {
             sd += (currFitness - avgFitness) * (currFitness - avgFitness) / size();
         }
         double standardDeviation = Math.sqrt(sd);
-        fr.write(generationCount + "," + avgFitness + "," + standardDeviation + "\n");
+        fr.write(generationCount + "\t\t\t" + avgFitness + "\t\t\t" + standardDeviation + "\n");
     }
 
     /**
